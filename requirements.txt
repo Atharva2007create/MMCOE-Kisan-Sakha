@@ -1,11 +1,4 @@
 # Kisan Sakha · MMCOE — production dependencies
-#
-# Environment (required for AI):
-#   GOOGLE_API_KEY — from https://aistudio.google.com/apikey
-# Optional:
-#   DATA_GOV_IN_API_KEY — data.gov.in (Maharashtra mandi merge, daily cache)
-#
-# Streamlit Cloud: add the same keys under Settings → Secrets.
 
 streamlit>=1.28.0
 google-generativeai>=0.8.0
