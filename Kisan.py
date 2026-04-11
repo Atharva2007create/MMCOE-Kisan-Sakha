@@ -1,20 +1,30 @@
 """
-MMCOE Kisan Sakha v4.0 — Enhanced
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Full Marathi UI translation (toggle from sidebar)
-• Enhanced charts with Plotly
-• Bilingual nav cards (English + Marathi)
-• More detailed data & AI prompts
-• Data: Agmarknet / ICAR / CACP / Maharashtra Agri Dept
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MMCOE Kisan Sakha — Gemini 2.5 Flash, optional GOOGLE_API_KEY env, RAG from official portals (daily cache),
+optional DATA_GOV_IN_API_KEY for Maharashtra mandi rows (daily). Embedded Agmarknet-style baselines as fallback.
 """
 
+import os
+import re
+import io
 import streamlit as st
 import pandas as pd
-import io
 import plotly.express as px
 import plotly.graph_objects as go
 import google.generativeai as genai
+import requests
+
+# Backend API key (optional): set GOOGLE_API_KEY or GEMINI_API_KEY in the environment.
+_ENV_GEMINI_KEY = (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
+_GEMINI_MODEL = "gemini-2.5-flash"
+
+# data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
+_ENV_DATA_GOV_KEY = (os.environ.get("DATA_GOV_IN_API_KEY") or "").strip()
+
+_RAG_URLS = (
+    "https://krishi.maharashtra.gov.in/",
+    "https://agmarknet.gov.in/",
+    "https://www.maharashtra.gov.in/",
+)
 
 # ══════════════════════════════════════════════════
 # PAGE CONFIG
@@ -109,6 +119,24 @@ T = {
     "chat_input_sell":  {"English": "Ask about mandi prices, MSP, storage, export…", "मराठी": "मंडी भाव, MSP, साठवण, निर्यात याबद्दल विचारा…"},
     "quick_q":          {"English": "Quick Questions — tap to ask:", "मराठी": "झटपट प्रश्न — दाबा:"},
     "ai_source":        {"English": "AI analysis grounded in ICAR soil profiles · Agmarknet price data · KVK Maharashtra", "मराठी": "ICAR माती प्रोफाइल · Agmarknet भाव डेटा · KVK महाराष्ट्र यावर आधारित AI विश्लेषण"},
+    "region_lbl":       {"English": "Region", "मराठी": "प्रदेश"},
+    "irr_type":         {"English": "Irrigation type", "मराठी": "सिंचन प्रकार"},
+    "area_ha":          {"English": "Area (hectares)", "मराठी": "क्षेत्र (हेक्टर)"},
+    "msp_season":       {"English": "Season", "मराठी": "हंगाम"},
+    "qty_qtl":          {"English": "Quantity (quintals)", "मराठी": "प्रमाण (क्विंटल)"},
+    "harvest_in":       {"English": "Harvest ready in", "मराठी": "काढणी कधी"},
+    "storage_lbl":      {"English": "Storage available", "मराठी": "साठवण सुविधा"},
+    "gen_schedule":     {"English": "Generate schedule", "मराठी": "वेळापत्रक तयार करा"},
+    "market_strategy":  {"English": "Get market strategy", "मराठी": "बाजार धोरण मिळवा"},
+    "ask_ai_exp":       {"English": "Ask AI about this section", "मराठी": "या विभागाबद्दल AI ला विचारा"},
+    "your_question":    {"English": "Your question", "मराठी": "आपला प्रश्न"},
+    "send":             {"English": "Send", "मराठी": "पाठवा"},
+    "live_prices_note": {"English": "Prices merge live Maharashtra mandi rows when DATA_GOV_IN_API_KEY is set (refreshed daily). Otherwise embedded Agmarknet-style baselines apply.", "मराठी": "DATA_GOV_IN_API_KEY सेट केल्यास महाराष्ट्र मंडीचे थेट ओळ दर दररोज विलीन होतात; नसल्यास एम्बेड केलेले आधारभूत भाव लागू."},
+    "env_key_hint":     {"English": "Or set GOOGLE_API_KEY in the environment.", "मराठी": "किंवा वातावरणात GOOGLE_API_KEY सेट करा."},
+    "grow_nav_desc":    {"English": "Soil pH & type · Sowing · Crops & varieties", "मराठी": "माती pH व प्रकार · पेरणी · पिके व वाण"},
+    "maint_nav_desc":   {"English": "Pests · Disease · Irrigation · Nutrition", "मराठी": "कीड · रोग · सिंचन · पोषण"},
+    "sell_nav_desc":    {"English": "Maharashtra mandi prices · MSP · Sales tips", "मराठी": "महाराष्ट्र मंडी भाव · MSP · विक्री सल्ले"},
+    "data_gov_api_hint": {"English": "Live mandi merge: set DATA_GOV_IN_API_KEY (data.gov.in).", "मराठी": "थेट मंडी: DATA_GOV_IN_API_KEY (data.gov.in) सेट करा."},
 }
 
 def t(key):
@@ -174,6 +202,18 @@ CHIPS = {
     },
 }
 
+# Reference text for planting advice (RAG + prompts); supplement to ICAR/KVK — verify locally before sowing.
+CROP_VARIETY_REFERENCE = """
+Maharashtra crop & variety reference (indicative; confirm with KVK / SAU / seed dept):
+Cereals: Paddy — Jaya, Indrayani, Karjat-3, MTU-1010, HMT, Pusa Basmati; Wheat — Lok-1, GW-496, HD-2189, DDW-47; Jowar — CSH-16, CSV-17, Phule Chitra, Phule Yashoda; Bajra — ICTP-8203, GHB-558, ICMV-221; Maize — PMH-10, DHM-117, HM-4, African tall.
+Pulses: Tur — BDN-711, BDN-716, PKV TARA; Moong — BM-4, Kopergaon; Urad — TAU-1, PDU-105; Chickpea — JG-11, Vijay, Digvijay; Lentil — IPL-406; Field pea — AP-3.
+Oilseeds: Soybean — JS-335, NRC-37, MAUS-71, Phule Kimaya, Kalitur; Groundnut — JL-24, TG-37A, ICGV-86590; Sunflower — KBSH-44, Phule Raviraj; Sesame — GT-10; Mustard — Pusa Bold, Varuna.
+Fibres: Cotton — Bunny, H-4, H-6, Jayadhar, NHH-44, PKV Rajat, desi & Bt hybrids as per zone.
+Cash / horticulture: Sugarcane — Co-86032, Co-0238, VSI-800; Onion — Bhima Kiran, Bhima Shakti, Agrifound Dark Red; Tomato — Pusa Ruby, Arka Rakshak; Grapes — Thompson Seedless, Sharad, Manik Chaman; Pomegranate — Bhagwa, Ruby, Ganesh; Banana — Grand Naine, Basrai; Turmeric — Salem; Mango — Kesar, Alphonso, Dashehari; Cashew — Vengurla-4.
+Spices & others: Chili — Tejaswini, Byadgi; Coriander — Local improved; Garlic — Agrifound Parvati; Brinjal — Phule Arjun; Okra — Phule Utkarsh; Cucurbits — local hybrids; Coconut — WCT, COD.
+For each district agro-climatic zone (Vidarbha, Marathwada, Western MH, North MH, Konkan) match Kharif/Rabi/Zaid calendars; soil pH 5.5–8.5 typical management: lime for acidity, gypsum for sodic, organic matter for sandy.
+"""
+
 # ══════════════════════════════════════════════════
 # EMBEDDED DATA (Agmarknet / ICAR / CACP)
 # ══════════════════════════════════════════════════
@@ -232,6 +272,41 @@ Pomegranate,डाळिंब,Sangli,Sangli,3800,5500,7200,Annual,5400
 Chickpea,हरभरा,Latur,Latur,4800,5200,5700,Rabi,8900
 Chickpea,हरभरा,Osmanabad,Osmanabad,4700,5100,5600,Rabi,7200
 Chickpea,हरभरा,Nanded,Nanded,4750,5150,5650,Rabi,6100
+Rice,तांदूळ,Raigad,Pen,1800,2100,2400,Kharif,11000
+Rice,तांदूळ,Ratnagiri,Ratnagiri,1900,2200,2500,Kharif,8500
+Rice,तांदूळ,Sindhudurg,Kudal,1850,2150,2450,Kharif,6200
+Rice,तांदूळ,Thane,Bhiwandi,1750,2050,2350,Kharif,7800
+Rice,तांदूळ,Palghar,Dahanu,1780,2080,2380,Kharif,5400
+Rice,तांदूळ,Chandrapur,Chandrapur,1600,1950,2300,Kharif,9200
+Rice,तांदूळ,Gadchiroli,Gadchiroli,1550,1880,2200,Kharif,4800
+Rice,तांदूळ,Gondia,Gondia,1680,2000,2320,Kharif,7600
+Rice,तांदूळ,Bhandara,Bhandara,1650,1980,2280,Kharif,6900
+Rice,तांदूळ,Dhule,Dhule,1720,2040,2360,Kharif,7100
+Rice,तांदूळ,Jalgaon,Jalgaon,1700,2020,2340,Kharif,8800
+Rice,तांदूळ,Nandurbar,Nandurbar,1680,1990,2280,Kharif,5500
+Rice,तांदूळ,Hingoli,Hingoli,1620,1940,2240,Kharif,4100
+Rice,तांदूळ,Parbhani,Parbhani,1640,1960,2260,Kharif,5200
+Rice,तांदूळ,Beed,Beed,1660,1980,2280,Kharif,4700
+Rice,तांदूळ,Washim,Washim,1630,1950,2250,Kharif,3900
+Maize,मका,Pune,Pune,1600,1880,2150,Kharif,6200
+Maize,मका,Nashik,Nashik,1580,1850,2120,Kharif,5800
+Maize,मका,Dhule,Dhule,1550,1820,2080,Kharif,4900
+Maize,मका,Jalna,Jalna,1570,1840,2100,Kharif,4400
+Sunflower,सूर्यफूल,Latur,Latur,5200,5600,6000,Kharif,3200
+Sunflower,सूर्यफूल,Osmanabad,Osmanabad,5100,5500,5900,Kharif,2800
+Sesame,तीळ,Parbhani,Parbhani,8200,8800,9400,Kharif,2100
+Moong,मूग,Latur,Latur,7800,8200,8600,Kharif,2600
+Urad,उडीद,Osmanabad,Osmanabad,6800,7200,7600,Kharif,2200
+Banana,केळी,Jalgaon,Jalgaon,800,1200,1800,Kharif,45000
+Banana,केळी,Solapur,Solapur,750,1100,1650,Kharif,28000
+Turmeric,हळद,Sangli,Sangli,9000,10500,12000,Kharif,8500
+Turmeric,हळद,Chandrapur,Chandrapur,8800,10200,11500,Kharif,6200
+Chili,मिरची,Nashik,Nashik,12000,14500,17000,Kharif,4200
+Chili,मिरची,Ahmednagar,Ahmednagar,11500,13800,16200,Kharif,3800
+Potato,बटाटा,Pune,Pune,900,1250,1600,Rabi,15000
+Potato,बटाटा,Nashik,Nashik,880,1220,1580,Rabi,12000
+Cabbage,कोबी,Pune,Pune,400,650,950,Kharif,9000
+Cauliflower,फुलकोबी,Pune,Pune,500,800,1100,Kharif,7500
 """
 
 SOIL_CSV = """Soil_Type,Soil_MR,Region,pH_Min,pH_Max,pH_Optimal,OC_pct,N_kg_ha,P_kg_ha,K_kg_ha,CEC,Fe_ppm,Zn_ppm,Texture,WHC,Drainage,Primary_Crops,Secondary_Crops,Deficiencies,Amendment
@@ -269,13 +344,152 @@ Safflower,करडई,5800,5800,0.0,Oilseed,Rabi
 Sugarcane (FRP),ऊस (FRP),340,315,7.9,Sugarcane,Annual
 """
 
-@st.cache_data
+
+def _strip_html(html: str) -> str:
+    t = re.sub(r"(?is)<script.*?>.*?</script>", " ", html)
+    t = re.sub(r"(?is)<style.*?>.*?</style>", " ", t)
+    t = re.sub(r"<[^>]+>", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_rag_corpus() -> str:
+    """Daily-refresh cache: official Maharashtra / Agmarknet / state portal text for RAG grounding."""
+    chunks = []
+    headers = {"User-Agent": "KisanSakha/1.0 (educational; contact: local deployment)"}
+    for url in _RAG_URLS:
+        try:
+            r = requests.get(url, timeout=18, headers=headers)
+            r.raise_for_status()
+            plain = _strip_html(r.text)[:12000]
+            if plain:
+                chunks.append(f"[SOURCE: {url}]\n{plain}")
+        except Exception:
+            continue
+    return "\n\n".join(chunks) if chunks else ""
+
+
+def retrieve_rag_snippets(query: str, corpus: str, max_chars: int = 3800) -> str:
+    if not corpus or not query.strip():
+        return ""
+    q_terms = set(re.findall(r"[a-zA-Z\u0900-\u097F]{3,}", query.lower()))
+    blocks = re.split(r"\[SOURCE:", corpus)
+    scored = []
+    for b in blocks:
+        if not b.strip():
+            continue
+        low = b.lower()
+        score = sum(1 for w in q_terms if w in low)
+        scored.append((score, b[:6000]))
+    scored.sort(key=lambda x: -x[0])
+    out, n = [], 0
+    for _, block in scored[:6]:
+        if n + len(block) > max_chars:
+            break
+        out.append(("[SOURCE:" + block) if not block.lstrip().startswith("[") else block)
+        n += len(block)
+    return "\n\n".join(out)[:max_chars]
+
+
+def _norm_price_row(rec: dict):
+    """Map varied data.gov.in / Agmarknet-style keys to our schema."""
+    keymap = {k.lower().replace(" ", "_"): v for k, v in rec.items()}
+    def g(*names):
+        for n in names:
+            for k, v in keymap.items():
+                if n in k and v not in (None, "", "NA"):
+                    return v
+        return None
+
+    state = str(g("state") or "").lower()
+    if state and "maharashtra" not in state:
+        return None
+
+    commodity = g("commodity", "crop", "variety")
+    if not commodity:
+        return None
+    district = str(g("district") or "Unknown")
+    market = str(g("market", "mandi", "apmc") or "APMC")
+    try:
+        mn = float(g("min_price", "min") or 0)
+        mx = float(g("max_price", "max") or 0)
+        md = float(g("modal_price", "modal", "avg") or (mn + mx) / 2 or 0)
+    except (TypeError, ValueError):
+        return None
+    if md <= 0:
+        return None
+    crop_en = str(commodity).split("(")[0].strip()[:80]
+    crop_mr = crop_en
+    return {
+        "Crop": crop_en,
+        "Crop_MR": crop_mr,
+        "District": district[:60],
+        "Market": market[:80],
+        "Min_Price": int(mn) if mn else int(md * 0.9),
+        "Modal_Price": int(md),
+        "Max_Price": int(mx) if mx else int(md * 1.1),
+        "Season": "Kharif",
+        "Arrival_MT": int(float(g("arrival", "quantity") or 100)),
+    }
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_live_mandi_maharashtra() -> pd.DataFrame:
+    if not _ENV_DATA_GOV_KEY:
+        return pd.DataFrame()
+    # National Data Sharing Platform — Current Daily Prices (commodities / mandi); resource ID from data.gov.in catalog.
+    url = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
+    rows = []
+    try:
+        offset = 0
+        for _ in range(8):
+            r = requests.get(
+                url,
+                params={
+                    "api-key": _ENV_DATA_GOV_KEY,
+                    "format": "json",
+                    "limit": 500,
+                    "offset": offset,
+                    "filters[state]": "Maharashtra",
+                },
+                timeout=25,
+                headers={"User-Agent": "KisanSakha/1.0"},
+            )
+            if r.status_code != 200:
+                break
+            data = r.json()
+            recs = data.get("records") or []
+            if not recs:
+                break
+            for rec in recs:
+                m = _norm_price_row(rec if isinstance(rec, dict) else {})
+                if m:
+                    rows.append(m)
+            offset += len(recs)
+            if len(recs) < 500:
+                break
+    except Exception:
+        return pd.DataFrame()
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+@st.cache_data(ttl=86400)
 def load_data():
+    base = pd.read_csv(io.StringIO(PRICE_CSV))
+    live = fetch_live_mandi_maharashtra()
+    if live is not None and not live.empty:
+        price = pd.concat([base, live], ignore_index=True)
+        price = price.drop_duplicates(
+            subset=["Crop", "District", "Market", "Season"], keep="last"
+        )
+    else:
+        price = base
     return (
-        pd.read_csv(io.StringIO(PRICE_CSV)),
+        price,
         pd.read_csv(io.StringIO(SOIL_CSV)),
         pd.read_csv(io.StringIO(MSP_CSV)),
     )
+
 
 price_df, soil_df, msp_df = load_data()
 
@@ -404,7 +618,16 @@ section[data-testid="stSidebar"] h2{font-size:1.45rem!important;color:#ffffff!im
 .nav-icon{font-size:3rem;margin-bottom:.7rem;display:block;}
 .nav-en{font-weight:700;font-size:1.15rem;color:var(--g1);margin-bottom:.15rem;}
 .nav-mr{font-family:'Tiro Devanagari Marathi',serif;font-size:.95rem;color:var(--g3);margin-bottom:.6rem;font-style:italic;}
-.nav-desc{color:var(--muted);font-size:.83rem;line-height:1.55;}
+.nav-desc{color:var(--muted);font-size:.83rem;line-height:1.45;}
+.nav-card.nav-grow{border-top:4px solid #e85d04!important;border-color:rgba(232,93,4,.28)!important;}
+.nav-card.nav-grow .nav-en{color:#c2410c!important;}
+.nav-card.nav-grow .nav-mr{color:#ea580c!important;}
+.nav-card.nav-maintain{border-top:4px solid #0077b6!important;border-color:rgba(0,119,182,.28)!important;}
+.nav-card.nav-maintain .nav-en{color:#0077b6!important;}
+.nav-card.nav-maintain .nav-mr{color:#0284c7!important;}
+.nav-card.nav-sell{border-top:4px solid #15803d!important;border-color:rgba(21,128,61,.28)!important;}
+.nav-card.nav-sell .nav-en{color:#15803d!important;}
+.nav-card.nav-sell .nav-mr{color:#16a34a!important;}
 
 /* ── Section header ── */
 .sec-hd{font-size:1.9rem!important;color:var(--g0)!important;font-weight:700!important;margin-bottom:.2rem!important;}
@@ -476,6 +699,7 @@ with st.sidebar:
 
     api_key = st.text_input(t("api_label"), type="password", placeholder=t("api_placeholder"))
     st.caption("Free key: [aistudio.google.com](https://aistudio.google.com)")
+    st.caption(t("env_key_hint"))
     st.divider()
 
     lang_choice = st.radio(t("lang_label"), ["English", "मराठी"], index=0 if st.session_state.lang == "English" else 1)
@@ -489,16 +713,17 @@ with st.sidebar:
     st.caption("🌱 [ICAR Soil Survey](https://icar.org.in)")
     st.caption("💰 [CACP MSP 2024-25](https://cacp.dacnet.nic.in)")
     st.caption("🏛️ [Maharashtra Krishi Dept](https://krishi.maharashtra.gov.in)")
+    st.caption(t("data_gov_api_hint"))
     st.divider()
-    st.caption("v4.0 · Agmarknet / ICAR / CACP")
 
 IS_MR = st.session_state.lang == "मराठी"
 
-# Configure Gemini
-if api_key:
+# Configure Gemini (sidebar key overrides backend env)
+_effective_api_key = (api_key or "").strip() or _ENV_GEMINI_KEY
+if _effective_api_key:
     try:
-        genai.configure(api_key=api_key)
-        st.session_state.model = genai.GenerativeModel("gemini-1.5-flash")
+        genai.configure(api_key=_effective_api_key)
+        st.session_state.model = genai.GenerativeModel(_GEMINI_MODEL)
     except Exception as e:
         st.session_state.model = None
         st.sidebar.error(str(e))
@@ -508,29 +733,54 @@ else:
 # ══════════════════════════════════════════════════
 # GEMINI
 # ══════════════════════════════════════════════════
-def ask_gemini(prompt, context="", data_context=""):
+def ask_gemini(prompt, context="", data_context="", use_rag=True, extra_knowledge=""):
     if not st.session_state.model:
         if IS_MR:
-            return "⚠️ कृपया साइडबारमध्ये वैध Gemini API की प्रविष्ट करा."
-        return "⚠️ Please enter a valid Gemini API key in the sidebar."
+            return "⚠️ साइडबारमध्ये API की टाका किंवा GOOGLE_API_KEY वातावरणात सेट करा."
+        return "⚠️ Enter a Gemini API key in the sidebar or set GOOGLE_API_KEY in the environment."
+    lang = st.session_state.lang
+    rag_block = ""
+    if use_rag:
+        try:
+            corpus = fetch_rag_corpus()
+            rag_block = retrieve_rag_snippets(f"{prompt} {context} {data_context}", corpus)
+        except Exception:
+            rag_block = ""
+    rag_section = (
+        f"\n\nOfficial website excerpts (RAG — prefer facts consistent with these; cite source URL if used):\n{rag_block}"
+        if rag_block
+        else ""
+    )
+    data_k = f"\n\nStructured / tabular context:\n{data_context}" if data_context else ""
+    ref_k = f"\n\nCrop & variety reference (verify with local KVK):\n{extra_knowledge}" if extra_knowledge else ""
+    system = (
+        f"You are a senior agricultural scientist and extension officer with 25+ years of experience in Maharashtra, India. "
+        f"You have deep expertise in ICAR soil science, Agmarknet mandi price dynamics, CACP MSP policies, "
+        f"Krishi Vigyan Kendra (KVK) practices, Maharashtra government agricultural schemes (PM-KISAN, RKVY, Namo Shetkari), "
+        f"and traditional Marathi farming methods across Vidarbha, Marathwada, Konkan, and Western Maharashtra. "
+        f"{context} "
+        f"{data_k}{ref_k}{rag_section} "
+        f"CRITICAL: Respond ENTIRELY in {lang}. "
+        f"{'Use fluent, correct Marathi with proper grammar and Devanagari script. Minimize unnecessary English.' if IS_MR else ''} "
+        f"Be specific, data-driven, and farmer-friendly. Use bullet points, concrete numbers, and local context. "
+        f"Mention relevant government schemes, APMC / e-NAM where relevant, and seasonal timing for Maharashtra. "
+        f"If portal excerpts conflict with structured data, note the discrepancy and prefer official mandi/department figures when available."
+    )
+    full_prompt = f"{system}\n\nQuestion: {prompt}"
     try:
-        lang = st.session_state.lang
-        system = (
-            f"You are a senior agricultural scientist and extension officer with 25+ years of experience in Maharashtra, India. "
-            f"You have deep expertise in ICAR soil science, Agmarknet mandi price dynamics, CACP MSP policies, "
-            f"Krishi Vigyan Kendra (KVK) practices, Maharashtra government agricultural schemes (PM-KISAN, RKVY, Namo Shetkari), "
-            f"and traditional Marathi farming methods across Vidarbha, Marathwada, Konkan, and Western Maharashtra. "
-            f"{context} "
-            f"{'Ground your answer in this official data: ' + data_context if data_context else ''} "
-            f"CRITICAL: Respond ENTIRELY in {lang}. "
-            f"{'Use fluent, correct Marathi with proper grammar and Devanagari script. Do NOT mix English words unnecessarily.' if IS_MR else ''} "
-            f"Be specific, data-driven, and farmer-friendly. Use bullet points, concrete numbers, and local context. "
-            f"Always mention relevant government schemes, local APMC market names, and seasonal timing relevant to Maharashtra."
-        )
-        response = st.session_state.model.generate_content(f"{system}\n\nQuestion: {prompt}")
+        response = st.session_state.model.generate_content(full_prompt)
         return response.text or ("कोणताही प्रतिसाद मिळाला नाही." if IS_MR else "No response generated.")
     except Exception as e:
-        return f"❌ Error: {str(e)}"
+        err = str(e)
+        if "404" in err or "not found" in err.lower() or "is not found" in err.lower():
+            try:
+                genai.configure(api_key=_effective_api_key)
+                st.session_state.model = genai.GenerativeModel("gemini-2.0-flash")
+                response = st.session_state.model.generate_content(full_prompt)
+                return response.text or ("कोणताही प्रतिसाद मिळाला नाही." if IS_MR else "No response generated.")
+            except Exception as e2:
+                return f"❌ Error: {e2}"
+        return f"❌ Error: {err}"
 
 # ══════════════════════════════════════════════════
 # HELPERS
@@ -558,6 +808,23 @@ def chip_row(chips_list, prefix):
 def get_chips(section):
     return CHIPS[section][st.session_state.lang]
 
+def tab_ai_ask(exp_key, ai_context, data_context="", extra_knowledge=""):
+    """Lightweight AI bar inside a tab (expander + text input) — same model + RAG as main chat."""
+    with st.expander(f"💬 {t('ask_ai_exp')}", expanded=False):
+        q = st.text_input(t("your_question"), key=f"{exp_key}_q", label_visibility="visible")
+        if st.button(t("send"), key=f"{exp_key}_go") and q.strip():
+            with st.spinner("…"):
+                r = ask_gemini(
+                    q.strip(),
+                    context=ai_context,
+                    data_context=data_context,
+                    extra_knowledge=extra_knowledge,
+                )
+            st.session_state[f"{exp_key}_ans"] = r
+        ans = st.session_state.get(f"{exp_key}_ans")
+        if ans:
+            st.markdown(f'<div class="resp-box">{ans}</div>', unsafe_allow_html=True)
+
 def crop_label(crop_en):
     row = price_df[price_df["Crop"] == crop_en]
     if not row.empty and IS_MR:
@@ -577,26 +844,41 @@ if st.session_state.page == "home":
     </div>
     """, unsafe_allow_html=True)
 
-    # Stats
+    _nc = int(price_df["Crop"].nunique())
+    _nd = int(price_df["District"].nunique())
+    _nm = int(price_df["Market"].nunique())
     stat_labels = {
-        "English": [("Crops Covered","48"),("Districts","35"),("APMC Markets","90+"),("Data Source","Agmarknet")],
-        "मराठी":   [("पिके","४८"),("जिल्हे","३५"),("APMC बाजार","९०+"),("माहिती स्रोत","Agmarknet")],
+        "English": [
+            (t("crops_covered"), str(_nc)),
+            (t("districts"), str(_nd)),
+            (t("markets"), str(_nm)),
+            (t("data_src_lbl"), "Agmarknet"),
+        ],
+        "मराठी": [
+            (t("crops_covered"), str(_nc)),
+            (t("districts"), str(_nd)),
+            (t("markets"), str(_nm)),
+            (t("data_src_lbl"), "Agmarknet"),
+        ],
     }
-    sc1,sc2,sc3,sc4 = st.columns(4)
-    for col,(lbl,val) in zip([sc1,sc2,sc3,sc4], stat_labels[st.session_state.lang]):
+    sc1, sc2, sc3, sc4 = st.columns(4)
+    for col, (lbl, val) in zip([sc1, sc2, sc3, sc4], stat_labels[st.session_state.lang]):
         with col:
-            st.markdown(f'<div class="stat-card fu1"><div class="stat-lbl">{lbl}</div><div class="stat-val">{val}</div></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="stat-card fu1"><div class="stat-lbl">{lbl}</div><div class="stat-val">{val}</div></div>',
+                unsafe_allow_html=True,
+            )
 
     st.write("")
-    c1,c2,c3 = st.columns(3, gap="large")
+    c1, c2, c3 = st.columns(3, gap="large")
     nav_data = [
-        ("growing",    "🌱", "Grow Smarter",       "हुशारीने पिकवा",   t("grow_desc"),    "fu1"),
-        ("maintaining","🩺", "Crop Health",         "पिकाचे आरोग्य",   t("maintain_desc"),"fu2"),
-        ("selling",    "💰", "Market Intelligence", "बाजार माहिती",    t("sell_desc"),    "fu3"),
+        ("growing", "🌱", "Crop Growth", "पिक वाढ", t("grow_nav_desc"), "fu1 nav-grow"),
+        ("maintaining", "🩺", "Crop Maintenance", "पिक देखभाल", t("maint_nav_desc"), "fu2 nav-maintain"),
+        ("selling", "💰", "Crop Sales", "पिक विक्री", t("sell_nav_desc"), "fu3 nav-sell"),
     ]
-    for col,(pg, icon, en, mr, desc, anim) in zip([c1,c2,c3], nav_data):
+    for col, (pg, icon, en, mr, desc, anim) in zip([c1, c2, c3], nav_data):
         with col:
-            display_title = mr if IS_MR else en
+            display_title = f"{en} · {mr}" if not IS_MR else f"{mr} · {en}"
             st.markdown(f"""
             <div class="nav-card {anim}">
                 <span class="nav-icon">{icon}</span>
@@ -608,8 +890,9 @@ if st.session_state.page == "home":
             if st.button(display_title, key=pg, use_container_width=True):
                 go(pg)
 
-    st.divider()
-    st.markdown('<p class="src-tag">Data: <a href="https://www.data.gov.in/catalog/current-daily-price-various-commodities-various-markets-mandi">Agmarknet / data.gov.in</a> · <a href="https://icar.org.in">ICAR</a> · <a href="https://cacp.dacnet.nic.in">CACP</a> · Maharashtra Dept of Agriculture & Farmers Welfare</p>', unsafe_allow_html=True)
+    st.caption(
+        "Agmarknet · ICAR · CACP · [krishi.maharashtra.gov.in](https://krishi.maharashtra.gov.in)"
+    )
 
 # ══════════════════════════════════════════════════
 # GROWING
@@ -698,25 +981,38 @@ elif st.session_state.page == "growing":
                         f"Fe {soil_row['Fe_ppm']} ppm, Zn {soil_row['Zn_ppm']} ppm. "
                         f"Primary crops: {soil_row['Primary_Crops']}. Deficiencies: {soil_row['Deficiencies']}. "
                         f"Standard amendment: {soil_row['Amendment']}.")
-            prompt = (f"Recommend the best crops for {soil_en} soil with pH {ph} in {district} district, Maharashtra, "
-                      f"during {season} season, with {water} irrigation. Include: "
-                      f"1) Top 3 crop recommendations with local variety names (e.g. NMK-1 for soybean), "
-                      f"2) Exact sowing dates for {district}, "
-                      f"3) Seed rate per hectare, "
-                      f"4) Complete fertiliser schedule (basal + top-dress) with exact NPK doses, "
-                      f"5) Micronutrient corrections for listed deficiencies, "
-                      f"6) Expected yield and income per hectare, "
-                      f"7) Relevant Maharashtra government schemes (PM-KISAN, RKVY, Soil Health Card), "
-                      f"8) Organic alternatives.")
+            prompt = (f"For {soil_en} soil at measured pH {ph} in {district}, Maharashtra, season {season}, water: {water}. "
+                      f"Answer as a complete planting guide: (1) soil pH interpretation and correction if needed; "
+                      f"(2) soil texture & drainage implications; (3) exhaustive list of suitable crops for this zone with named varieties "
+                      f"(cereals, pulses, oilseeds, fibre, cash crops, vegetables, spices — as many as realistically grown in Maharashtra); "
+                      f"(4) top 5 priority crops for this farmer with seed rate, sowing window, spacing; "
+                      f"(5) full NPK + micronutrient plan; (6) organic options; (7) schemes: PM-KISAN, Soil Health Card, RKVY, state advisories.")
             with st.spinner("Analysing with ICAR soil data…" if not IS_MR else "ICAR माती डेटासह विश्लेषण होत आहे…"):
-                result = ask_gemini(prompt, data_context=data_ctx)
+                result = ask_gemini(
+                    prompt,
+                    context="You specialise in agronomy and soil–crop matching for Maharashtra.",
+                    data_context=data_ctx,
+                    extra_knowledge=CROP_VARIETY_REFERENCE,
+                )
             st.markdown(f'<div class="resp-box">{result}</div>', unsafe_allow_html=True)
             st.markdown(f'<p class="src-tag">{t("ai_source")}</p>', unsafe_allow_html=True)
 
         if clicked:
             with st.spinner("…"):
-                result = ask_gemini(clicked, data_context=f"Soil: {soil_en}, pH: {ph}, District: {district}")
+                result = ask_gemini(
+                    clicked,
+                    context="You specialise in crop planning and soil science for Maharashtra.",
+                    data_context=f"Soil: {soil_en}, pH: {ph}, District: {district}",
+                    extra_knowledge=CROP_VARIETY_REFERENCE,
+                )
             st.markdown(f'<div class="resp-box">{result}</div>', unsafe_allow_html=True)
+
+        tab_ai_ask(
+            "grow_t1",
+            "You specialise in crop planting: soil pH, soil type, varieties, and calendars for Maharashtra.",
+            data_context=f"Soil: {soil_en}, pH {ph}, District: {district}, Season: {season}, Water: {water}",
+            extra_knowledge=CROP_VARIETY_REFERENCE,
+        )
 
     with tab2:
         st.markdown(f"**{'महाराष्ट्र माती रसायन संदर्भ' if IS_MR else 'Maharashtra Soil Chemistry Reference'}** *(ICAR-NBSS&LUP / KVK)*")
@@ -748,6 +1044,12 @@ elif st.session_state.page == "growing":
         )
         st.plotly_chart(fig_nut, use_container_width=True)
         st.caption("Source: ICAR-NBSS&LUP · Krishi Vigyan Kendra Maharashtra · Maharashtra State Soil Survey")
+        tab_ai_ask(
+            "grow_t2",
+            "You explain soil chemistry tables and nutrient planning for Maharashtra farmers.",
+            data_context="Use the soil chemistry dataframe shown in this tab (ICAR-style reference).",
+            extra_knowledge=CROP_VARIETY_REFERENCE,
+        )
 
     with tab3:
         st.markdown(f"**{'AI कृषितज्ञाला विचारा — माती, पिके, शेती पद्धती:' if IS_MR else 'Ask the AI Agronomist — soil, crops, farming practices:'}**")
@@ -761,7 +1063,11 @@ elif st.session_state.page == "growing":
             with st.chat_message("user"): st.markdown(fq)
             with st.chat_message("assistant"):
                 with st.spinner("…"):
-                    r = ask_gemini(fq, "You specialise in crop science and soil chemistry for Maharashtra.")
+                    r = ask_gemini(
+                        fq,
+                        context="You specialise in crop science and soil chemistry for Maharashtra.",
+                        extra_knowledge=CROP_VARIETY_REFERENCE,
+                    )
                 st.markdown(r)
             st.session_state.grow_msgs.append({"role":"assistant","content":r})
         if st.session_state.grow_msgs:
@@ -798,23 +1104,33 @@ elif st.session_state.page == "maintaining":
                 "English": ["Vidarbha","Marathwada","Western Maharashtra","Konkan","North Maharashtra"],
                 "मराठी":   ["विदर्भ","मराठवाडा","पश्चिम महाराष्ट्र","कोकण","उत्तर महाराष्ट्र"],
             }
-            region = st.selectbox("Region / प्रदेश", region_opts[st.session_state.lang])
+            region = st.selectbox(t("region_lbl"), region_opts[st.session_state.lang])
 
         if st.button(t("diagnose_btn"), use_container_width=True):
-            prompt = (f"Diagnose and treat: {crop_en} at {growth} stage in {region}, Maharashtra, "
-                      f"showing: {symptom or 'general health check'}. Provide: "
-                      f"1) Most likely cause(s) with scientific name if pest/disease, "
-                      f"2) Organic/bio control options with dose and timing, "
-                      f"3) Chemical control with recommended molecule, dose per hectare, and safety interval, "
-                      f"4) Preventive measures for next season, "
-                      f"5) Any government spray subsidy schemes available in Maharashtra.")
+            prompt = (f"Full crop maintenance advisory for {crop_en} at {growth} in {region}, Maharashtra. "
+                      f"Symptoms: {symptom or 'general health check'}. Cover: "
+                      f"(1) diagnosis with possible pests/diseases/nutrient issues; "
+                      f"(2) IPM: cultural, biological, organic sprays with doses; "
+                      f"(3) chemical options (molecule, dose/ha, PHI, resistance management); "
+                      f"(4) irrigation & fertigation adjustments; "
+                      f"(5) Maharashtra schemes / university/KVK contacts pattern; "
+                      f"(6) preventive package for next season.")
             with st.spinner("Diagnosing…" if not IS_MR else "निदान होत आहे…"):
-                res = ask_gemini(prompt, "You are a plant pathologist specialising in Maharashtra crops.")
+                res = ask_gemini(
+                    prompt,
+                    context="You are a plant pathologist and crop physiologist for Maharashtra.",
+                )
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
         if clicked:
             with st.spinner("…"):
-                res = ask_gemini(clicked)
+                res = ask_gemini(clicked, context="You advise on pest, disease, and crop maintenance in Maharashtra.")
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
+
+        tab_ai_ask(
+            "maint_t1",
+            "You answer questions on pest, disease, and field symptoms for Maharashtra crops.",
+            data_context=f"Crop: {crop_en}, Stage: {growth}, Region: {region}",
+        )
 
     with tab2:
         clicked2 = chip_row(get_chips("maintain")[3:], "m2_chip")
@@ -829,10 +1145,10 @@ elif st.session_state.page == "maintaining":
                 "English": ["Rain-fed","Drip","Sprinkler","Furrow","Flood"],
                 "मराठी":   ["पावसावर अवलंबून","ठिबक","तुषार","सरी","पूर सिंचन"],
             }
-            irr = st.selectbox("Irrigation Type" if not IS_MR else "सिंचन प्रकार", irr_opts[st.session_state.lang])
-            area = st.number_input("Area (Hectares)" if not IS_MR else "क्षेत्र (हेक्टर)", 0.5, 50.0, 1.0, step=0.5)
+            irr = st.selectbox(t("irr_type"), irr_opts[st.session_state.lang])
+            area = st.number_input(t("area_ha"), 0.5, 50.0, 1.0, step=0.5)
 
-        if st.button("📋 Generate Schedule" if not IS_MR else "📋 वेळापत्रक तयार करा", use_container_width=True):
+        if st.button(f"📋 {t('gen_schedule')}", use_container_width=True):
             sr = soil_df[soil_df["Soil_Type"] == soil_n_en].iloc[0]
             data_ctx = f"ICAR: N {sr['N_kg_ha']} kg/ha, P {sr['P_kg_ha']} kg/ha, K {sr['K_kg_ha']} kg/ha, OC {sr['OC_pct']}%"
             prompt = (f"Create a complete fertiliser and {irr} irrigation schedule for {crop_n_en} on {soil_n_en} soil "
@@ -850,8 +1166,14 @@ elif st.session_state.page == "maintaining":
 
         if clicked2:
             with st.spinner("…"):
-                res = ask_gemini(clicked2)
+                res = ask_gemini(clicked2, context="You advise on irrigation and nutrition for Maharashtra.")
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
+
+        tab_ai_ask(
+            "maint_t2",
+            "You advise on irrigation scheduling, NPK, and micronutrients for Maharashtra crops.",
+            data_context=f"Crop: {crop_n_en}, Soil profile: {soil_n_en}, Irrigation: {irr}, Area ha: {area}",
+        )
 
     with tab3:
         for msg in st.session_state.maintain_msgs:
@@ -864,7 +1186,7 @@ elif st.session_state.page == "maintaining":
             with st.chat_message("user"): st.markdown(fq)
             with st.chat_message("assistant"):
                 with st.spinner("…"):
-                    r = ask_gemini(fq, "You are a crop health expert for Maharashtra.")
+                    r = ask_gemini(fq, context="You are a crop health expert for Maharashtra.")
                 st.markdown(r)
             st.session_state.maintain_msgs.append({"role":"assistant","content":r})
         if st.session_state.maintain_msgs:
@@ -895,6 +1217,8 @@ elif st.session_state.page == "selling":
         with c_f3:
             dist_opts = (["सर्व जिल्हे"] if IS_MR else ["All"]) + sorted(price_df["District"].unique())
             dist_sel = st.selectbox(t("district"), dist_opts)
+
+        st.caption(t("live_prices_note"))
 
         filt = price_df[price_df["Crop"] == crop_sel].copy()
         if season_sel not in ["All","All / सर्व"]:
@@ -958,24 +1282,44 @@ elif st.session_state.page == "selling":
                 }).sort_values("मोडल ₹/qtl" if IS_MR else "Modal_Price", ascending=False),
                 use_container_width=True, hide_index=True,
             )
-            st.caption(f"{'स्रोत' if IS_MR else 'Source'}: Directorate of Marketing & Inspection (DMI) · [Agmarknet](https://agmarknet.gov.in) · data.gov.in · 2024-25")
+            st.caption(
+                f"{'स्रोत' if IS_MR else 'Source'}: DMI · [Agmarknet](https://agmarknet.gov.in) · data.gov.in"
+            )
         else:
             st.info("No data for selected filters." if not IS_MR else "निवडलेल्या फिल्टरसाठी डेटा नाही.")
 
+        _price_ctx = ""
+        if not filt.empty:
+            _price_ctx = (
+                f"Crop {crop_sel}: modal ₹{int(filt['Modal_Price'].min())}–₹{int(filt['Modal_Price'].max())}/qtl across "
+                f"{filt['District'].nunique()} districts in dataset."
+            )
+        tab_ai_ask(
+            "sell_t1",
+            "You interpret mandi prices, arrivals, and timing for selling in Maharashtra.",
+            data_context=_price_ctx,
+        )
+
         clicked_s = chip_row(get_chips("sell")[:3], "s_chip")
         if clicked_s:
-            data_ctx = f"Crop: {crop_sel}, modal range ₹{min_m if not filt.empty else 'N/A'}–₹{max_m if not filt.empty else 'N/A'}/qtl"
+            data_ctx = (
+                f"Crop: {crop_sel}, modal range ₹{min_m if not filt.empty else 'N/A'}–₹{max_m if not filt.empty else 'N/A'}/qtl"
+            )
             with st.spinner("…"):
-                res = ask_gemini(clicked_s, data_context=data_ctx if not filt.empty else "")
+                res = ask_gemini(
+                    clicked_s,
+                    context="You advise Maharashtra farmers on crop marketing.",
+                    data_context=data_ctx if not filt.empty else "",
+                )
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
 
     with tab2:
         st.markdown(f"**{'किमान आधारभूत किंमत (MSP) 2024-25' if IS_MR else 'Minimum Support Price (MSP) 2024-25'}** *(CACP — Ministry of Agriculture, GoI)*")
 
         msp_cat = st.radio(
-            "Season" if not IS_MR else "हंगाम",
-            (["All","Kharif","Rabi","Annual"] if not IS_MR else ["सर्व","खरीप","रब्बी","वार्षिक"]),
-            horizontal=True
+            t("msp_season"),
+            (["All", "Kharif", "Rabi", "Annual"] if not IS_MR else ["सर्व", "खरीप", "रब्बी", "वार्षिक"]),
+            horizontal=True,
         )
         cat_map = {"सर्व":"All","खरीप":"Kharif","रब्बी":"Rabi","वार्षिक":"Annual"}
         msp_key = cat_map.get(msp_cat, msp_cat)
@@ -1030,6 +1374,11 @@ elif st.session_state.page == "selling":
         display_msp_cols = ["Crop_MR","MSP_2024_25","MSP_2023_24","Increase_pct","Category","Season"] if IS_MR else ["Crop","MSP_2024_25","MSP_2023_24","Increase_pct","Category","Season"]
         st.dataframe(msp_filt[display_msp_cols].rename(columns=rename_msp), use_container_width=True, hide_index=True)
         st.caption(f"{'स्रोत' if IS_MR else 'Source'}: [CACP — Commission for Agricultural Costs & Prices](https://cacp.dacnet.nic.in) · Ministry of Agriculture & Farmers Welfare, GoI")
+        tab_ai_ask(
+            "sell_t2",
+            "You explain MSP, procurement, and how it relates to mandi prices in Maharashtra.",
+            data_context="MSP table from CACP reference in app (verify current year on official site).",
+        )
 
     with tab3:
         clicked_s2 = chip_row(get_chips("sell")[2:5], "s2_chip")
@@ -1037,20 +1386,20 @@ elif st.session_state.page == "selling":
         with col_a2:
             crop_ai_d = st.selectbox(t("crop_lbl"), crop_disp, key="ai_crop")
             crop_ai   = crops_avail[crop_disp.index(crop_ai_d)]
-            qty = st.number_input("Quantity (quintals)" if not IS_MR else "प्रमाण (क्विंटल)", 10, 5000, 100, step=10)
+            qty = st.number_input(t("qty_qtl"), 10, 5000, 100, step=10)
         with col_b2:
             harvest_opts = {
                 "English": ["Now / This week","2–4 weeks","1–2 months","3+ months"],
                 "मराठी":   ["आता / या आठवड्यात","2–4 आठवड्यात","1–2 महिन्यांत","3+ महिन्यांत"],
             }
-            harvest_in = st.selectbox("Harvest ready in" if not IS_MR else "काढणी कधी", harvest_opts[st.session_state.lang])
+            harvest_in = st.selectbox(t("harvest_in"), harvest_opts[st.session_state.lang])
             storage_opts = {
                 "English": ["None","Cold storage","Gunny bags / Warehouse","FPO / Co-op storage"],
                 "मराठी":   ["नाही","शीतगृह","गोदाम / पोती","FPO / सहकारी साठवण"],
             }
-            storage = st.selectbox("Storage available" if not IS_MR else "साठवण सुविधा", storage_opts[st.session_state.lang])
+            storage = st.selectbox(t("storage_lbl"), storage_opts[st.session_state.lang])
 
-        if st.button("📈 Get Market Strategy" if not IS_MR else "📈 बाजार धोरण मिळवा", use_container_width=True):
+        if st.button(f"📈 {t('market_strategy')}", use_container_width=True):
             crop_data = price_df[price_df["Crop"] == crop_ai]
             if not crop_data.empty:
                 best_mkt = crop_data.loc[crop_data["Modal_Price"].idxmax()]
@@ -1071,14 +1420,24 @@ elif st.session_state.page == "selling":
                       f"6) Relevant Maharashtra/central govt schemes (PM-AASHA, Price Stabilisation Fund), "
                       f"7) Export potential if applicable.")
             with st.spinner("Analysing…" if not IS_MR else "विश्लेषण होत आहे…"):
-                res = ask_gemini(prompt, data_context=data_ctx)
+                res = ask_gemini(
+                    prompt,
+                    context="You are a commodity marketing advisor for Maharashtra.",
+                    data_context=data_ctx,
+                )
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
-            st.markdown('<p class="src-tag">Based on Agmarknet APMC data · CACP MSP 2024-25 · Maharashtra Agri Dept advisories</p>', unsafe_allow_html=True)
+            st.markdown(f'<p class="src-tag">{t("ai_source")}</p>', unsafe_allow_html=True)
 
         if clicked_s2:
             with st.spinner("…"):
-                res = ask_gemini(clicked_s2)
+                res = ask_gemini(clicked_s2, context="You advise on crop sales and markets in Maharashtra.")
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
+
+        tab_ai_ask(
+            "sell_t3",
+            "You advise on when/where to sell, APMC, e-NAM, and storage for Maharashtra farmers.",
+            data_context=f"Crop: {crop_ai}, qty: {qty} qtl, harvest: {harvest_in}, storage: {storage}",
+        )
 
     with tab4:
         c_s3 = chip_row(get_chips("sell")[4:], "s3_chip")
