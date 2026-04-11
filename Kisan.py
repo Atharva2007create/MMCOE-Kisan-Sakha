@@ -1,6 +1,7 @@
 """
-MMCOE Kisan Sakha — Gemini 2.5 Flash, optional GOOGLE_API_KEY env, RAG from official portals (daily cache),
-optional DATA_GOV_IN_API_KEY for Maharashtra mandi rows (daily). Embedded Agmarknet-style baselines as fallback.
+MMCOE Kisan Sakha — deployment-ready Streamlit app.
+Set GOOGLE_API_KEY in the environment (from Google AI Studio). Optional: DATA_GOV_IN_API_KEY for live mandi merge.
+Uses Gemini models via google-generativeai; RAG cache (24h); embedded baselines as fallback.
 """
 
 import os
@@ -13,9 +14,9 @@ import plotly.graph_objects as go
 import google.generativeai as genai
 import requests
 
-# Backend API key (optional): set GOOGLE_API_KEY or GEMINI_API_KEY in the environment.
-_ENV_GEMINI_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or os.environ.get("GEMINI_API_KEY") or "").strip()
-_GEMINI_MODEL = "gemini-2.5-flash"
+# Backend: GOOGLE_API_KEY only (create at https://aistudio.google.com/apikey).
+_ENV_GOOGLE_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or "").strip()
+_GEMINI_MODEL = "gemini-2.5-flash"  # model id for the Generative AI API (not a second API key)
 
 # data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
 _ENV_DATA_GOV_KEY = (os.environ.get("DATA_GOV_IN_API_KEY") or "").strip()
@@ -60,7 +61,7 @@ T = {
     "app_title":        {"English": "🚜 MMCOE Kisan Sakha", "मराठी": "🚜 एमएमसीओई किसान सखा"},
     "app_subtitle":     {"English": "AI-powered farming intelligence for Maharashtra's farmers", "मराठी": "महाराष्ट्रातील शेतकऱ्यांसाठी AI-आधारित कृषी माहिती"},
     "settings":         {"English": "⚙️ Settings", "मराठी": "⚙️ सेटिंग्ज"},
-    "api_label":        {"English": "Gemini API Key", "मराठी": "जेमिनी API की"},
+    "api_label":        {"English": "Google AI API key", "मराठी": "Google AI API की"},
     "api_placeholder":  {"English": "Paste key here…", "मराठी": "इथे की पेस्ट करा…"},
     "lang_label":       {"English": "Language / भाषा", "मराठी": "भाषा"},
     "data_sources":     {"English": "Data Sources", "मराठी": "माहिती स्रोत"},
@@ -137,6 +138,10 @@ T = {
     "maint_nav_desc":   {"English": "Pests · Disease · Irrigation · Nutrition", "मराठी": "कीड · रोग · सिंचन · पोषण"},
     "sell_nav_desc":    {"English": "Maharashtra mandi prices · MSP · Sales tips", "मराठी": "महाराष्ट्र मंडी भाव · MSP · विक्री सल्ले"},
     "data_gov_api_hint": {"English": "Live mandi merge: set DATA_GOV_IN_API_KEY (data.gov.in).", "मराठी": "थेट मंडी: DATA_GOV_IN_API_KEY (data.gov.in) सेट करा."},
+    "no_api_key":       {"English": "Set **GOOGLE_API_KEY** (Google AI Studio). Required for AI answers.", "मराठी": "**GOOGLE_API_KEY** सेट करा (Google AI Studio). AI साठी आवश्यक."},
+    "api_deploy_note":  {"English": "Deployment: configure `GOOGLE_API_KEY` in your host (Streamlit Cloud secrets, Docker env, or `.env`).", "मराठी": "डिप्लॉयमेंट: होस्टवर `GOOGLE_API_KEY` कॉन्फिगर करा."},
+    "chip_working":     {"English": "Preparing a detailed answer…", "मराठी": "तपशीलवार उत्तर तयार होत आहे…"},
+    "clear_chip_ans":   {"English": "Clear answer", "मराठी": "उत्तर साफ करा"},
 }
 
 def t(key):
@@ -575,6 +580,28 @@ section[data-testid="stSidebar"] *{color:#c8e6d0!important;font-family:'Sora',sa
 section[data-testid="stSidebar"] input{background:rgba(255,255,255,.09)!important;border:1px solid rgba(255,255,255,.18)!important;border-radius:8px!important;color:#fff!important;}
 section[data-testid="stSidebar"] .stRadio label{color:#b7e4c7!important;}
 section[data-testid="stSidebar"] h2{font-size:1.45rem!important;color:#ffffff!important;letter-spacing:-.4px;}
+/* Sidebar collapse: hide Material icon / "keyboard..." label; show → */
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
+  position:relative!important;min-height:2rem!important;
+}
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] p,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] span[data-testid="stIconMaterial"] {
+  font-size:0!important;line-height:0!important;color:transparent!important;width:0!important;overflow:hidden!important;
+}
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]::after {
+  content:"→"!important;font-size:1.25rem!important;color:#b7e4c7!important;display:block!important;
+  position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;
+  pointer-events:none!important;
+}
+/* Collapsed sidebar expand control (main strip) */
+[data-testid="collapsedControl"]{position:relative!important;min-width:2rem!important;}
+[data-testid="collapsedControl"] span[data-testid="stIconMaterial"],
+[data-testid="collapsedControl"] p{font-size:0!important;color:transparent!important;}
+[data-testid="collapsedControl"]::after{
+  content:"→"!important;font-size:1.2rem!important;color:var(--g2,#2d6a4f)!important;
+  position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;
+  pointer-events:none!important;
+}
 
 /* ── Animations ── */
 @keyframes fadeUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
@@ -694,12 +721,8 @@ hr{border-color:var(--g5)!important;}
 # ══════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("## 🌿 Kisan Sakha · किसान सखा")
-    st.caption("MMCOE · AI Farming Companion v4.0")
-    st.divider()
-
-    api_key = st.text_input(t("api_label"), type="password", placeholder=t("api_placeholder"))
-    st.caption("Free key: [aistudio.google.com](https://aistudio.google.com)")
-    st.caption(t("env_key_hint"))
+    st.caption("MMCOE · AI Farming Companion")
+    st.caption(t("api_deploy_note"))
     st.divider()
 
     lang_choice = st.radio(t("lang_label"), ["English", "मराठी"], index=0 if st.session_state.lang == "English" else 1)
@@ -718,8 +741,8 @@ with st.sidebar:
 
 IS_MR = st.session_state.lang == "मराठी"
 
-# Configure Gemini (sidebar key overrides backend env)
-_effective_api_key = (api_key or "").strip() or _ENV_GEMINI_KEY
+# API key from environment only (deployment-ready)
+_effective_api_key = _ENV_GOOGLE_KEY
 if _effective_api_key:
     try:
         genai.configure(api_key=_effective_api_key)
@@ -730,14 +753,46 @@ if _effective_api_key:
 else:
     st.session_state.model = None
 
+if not _effective_api_key:
+    st.warning(t("no_api_key"))
+
 # ══════════════════════════════════════════════════
-# GEMINI
+# GOOGLE AI (Generative Language API)
 # ══════════════════════════════════════════════════
+def expand_chip_question(question: str, domain: str) -> str:
+    """Turn a short chip label into an instruction for a long, structured answer."""
+    guides = {
+        "grow": (
+            "Domain: crop planning & soil for Maharashtra. "
+            "Include soil pH interpretation, suitable crops/varieties, sowing windows, seed rate, NPK/micronutrients, "
+            "organic options, water management, and relevant schemes (PM-KISAN, Soil Health Card, RKVY)."
+        ),
+        "maintain": (
+            "Domain: crop health & maintenance in Maharashtra. "
+            "Include likely diagnosis, IPM (cultural/bio/chemical with doses and PHI), irrigation/fertigation tweaks, "
+            "prevention next season, and where to confirm (KVK, university advisory)."
+        ),
+        "sell": (
+            "Domain: marketing & mandi economics in Maharashtra. "
+            "Reference MSP vs mandi where relevant, APMC/e-NAM, timing, storage, grading, negotiation with adatiyas, "
+            "schemes (PM-AASHA, etc.), and practical next steps."
+        ),
+    }
+    g = guides.get(domain, guides["grow"])
+    return (
+        f"{g}\n\n"
+        f"The farmer selected this suggested question from the app:\n« {question} »\n\n"
+        "Answer in depth for a smallholder in Maharashtra. Structure your reply with clear headings and bullet points. "
+        "Give concrete numbers, timings, and examples where possible. End with a short checklist and a line on "
+        "verifying with the local agriculture office or KVK."
+    )
+
+
 def ask_gemini(prompt, context="", data_context="", use_rag=True, extra_knowledge=""):
     if not st.session_state.model:
         if IS_MR:
-            return "⚠️ साइडबारमध्ये API की टाका किंवा GOOGLE_API_KEY वातावरणात सेट करा."
-        return "⚠️ Enter a Gemini API key in the sidebar or set GOOGLE_API_KEY in the environment."
+            return "⚠️ GOOGLE_API_KEY वातावरणात सेट करा (Google AI Studio)."
+        return "⚠️ Set GOOGLE_API_KEY (from Google AI Studio)."
     lang = st.session_state.lang
     rag_block = ""
     if use_rag:
@@ -767,17 +822,41 @@ def ask_gemini(prompt, context="", data_context="", use_rag=True, extra_knowledg
         f"If portal excerpts conflict with structured data, note the discrepancy and prefer official mandi/department figures when available."
     )
     full_prompt = f"{system}\n\nQuestion: {prompt}"
+
+    def _call_model(model, text):
+        try:
+            return model.generate_content(text, request_options={"timeout": 120})
+        except TypeError:
+            return model.generate_content(text)
+
     try:
-        response = st.session_state.model.generate_content(full_prompt)
-        return response.text or ("कोणताही प्रतिसाद मिळाला नाही." if IS_MR else "No response generated.")
+        response = _call_model(st.session_state.model, full_prompt)
+        try:
+            out = (response.text or "").strip()
+        except ValueError:
+            fb = getattr(response, "prompt_feedback", None)
+            out = (
+                (
+                    "मॉडेलने मजकूर दिला नाही (सुरक्षा/फिल्टर). प्रश्न सोपा करून पुन्हा प्रयत्न करा."
+                    if IS_MR
+                    else "No text returned (safety filter or empty candidates). Try rephrasing."
+                )
+                if not fb
+                else str(fb)
+            )
+        return out or ("कोणताही प्रतिसाद मिळाला नाही." if IS_MR else "No response generated.")
     except Exception as e:
         err = str(e)
         if "404" in err or "not found" in err.lower() or "is not found" in err.lower():
             try:
                 genai.configure(api_key=_effective_api_key)
                 st.session_state.model = genai.GenerativeModel("gemini-2.0-flash")
-                response = st.session_state.model.generate_content(full_prompt)
-                return response.text or ("कोणताही प्रतिसाद मिळाला नाही." if IS_MR else "No response generated.")
+                response = _call_model(st.session_state.model, full_prompt)
+                try:
+                    out = (response.text or "").strip()
+                except ValueError:
+                    out = ""
+                return out or ("कोणताही प्रतिसाद मिळाला नाही." if IS_MR else "No response generated.")
             except Exception as e2:
                 return f"❌ Error: {e2}"
         return f"❌ Error: {err}"
@@ -797,13 +876,42 @@ def back_btn():
     st.write("")
 
 def chip_row(chips_list, prefix):
+    """Suggestion buttons; selection is stored and must be consumed with finish_chip_qa (or chat-tab pop)."""
     st.markdown(f'<div class="chip-lbl">{t("quick_q")}</div>', unsafe_allow_html=True)
+    if not chips_list:
+        return
     cols = st.columns(len(chips_list))
-    for i, (col, chip) in enumerate(zip(cols, chips_list)):
-        with col:
+    for i, chip in enumerate(chips_list):
+        with cols[i]:
             if st.button(chip, key=f"{prefix}_{i}", use_container_width=True):
-                return chip
-    return ""
+                st.session_state[f"{prefix}_pending"] = chip
+
+
+def finish_chip_qa(prefix, domain, context, data_context="", extra_knowledge=""):
+    """After widgets define context: run Gemini on pending chip and persist answer until cleared."""
+    pend = st.session_state.pop(f"{prefix}_pending", None)
+    res_key = f"{prefix}_result"
+    if pend:
+        expanded = expand_chip_question(pend, domain)
+        with st.spinner(t("chip_working")):
+            try:
+                ans = ask_gemini(
+                    expanded,
+                    context=context,
+                    data_context=data_context,
+                    extra_knowledge=extra_knowledge,
+                )
+            except Exception as ex:
+                ans = f"❌ {ex}"
+        st.session_state[res_key] = {"q": pend, "a": ans}
+    block = st.session_state.get(res_key)
+    if block:
+        ql = "प्रश्न" if IS_MR else "Question"
+        st.markdown(f"**{ql}:** {block['q']}")
+        st.markdown(block["a"])
+        if st.button(t("clear_chip_ans"), key=f"{prefix}_clr_res"):
+            del st.session_state[res_key]
+            st.rerun()
 
 def get_chips(section):
     return CHIPS[section][st.session_state.lang]
@@ -813,13 +921,16 @@ def tab_ai_ask(exp_key, ai_context, data_context="", extra_knowledge=""):
     with st.expander(f"💬 {t('ask_ai_exp')}", expanded=False):
         q = st.text_input(t("your_question"), key=f"{exp_key}_q", label_visibility="visible")
         if st.button(t("send"), key=f"{exp_key}_go") and q.strip():
-            with st.spinner("…"):
-                r = ask_gemini(
-                    q.strip(),
-                    context=ai_context,
-                    data_context=data_context,
-                    extra_knowledge=extra_knowledge,
-                )
+            with st.spinner(t("chip_working")):
+                try:
+                    r = ask_gemini(
+                        q.strip(),
+                        context=ai_context,
+                        data_context=data_context,
+                        extra_knowledge=extra_knowledge,
+                    )
+                except Exception as ex:
+                    r = f"❌ {ex}"
             st.session_state[f"{exp_key}_ans"] = r
         ans = st.session_state.get(f"{exp_key}_ans")
         if ans:
@@ -909,7 +1020,7 @@ elif st.session_state.page == "growing":
     soil_display  = soil_names_mr if IS_MR else soil_names_en
 
     with tab1:
-        clicked = chip_row(get_chips("grow")[:5], "g_chip")
+        chip_row(get_chips("grow")[:5], "g_soil")
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -997,15 +1108,14 @@ elif st.session_state.page == "growing":
             st.markdown(f'<div class="resp-box">{result}</div>', unsafe_allow_html=True)
             st.markdown(f'<p class="src-tag">{t("ai_source")}</p>', unsafe_allow_html=True)
 
-        if clicked:
-            with st.spinner("…"):
-                result = ask_gemini(
-                    clicked,
-                    context="You specialise in crop planning and soil science for Maharashtra.",
-                    data_context=f"Soil: {soil_en}, pH: {ph}, District: {district}",
-                    extra_knowledge=CROP_VARIETY_REFERENCE,
-                )
-            st.markdown(f'<div class="resp-box">{result}</div>', unsafe_allow_html=True)
+        _grow_ctx = f"Soil type: {soil_en}. pH: {ph}. District: {district}. Season: {season}. Water: {water}."
+        finish_chip_qa(
+            "g_soil",
+            "grow",
+            "You specialise in crop planning and soil science for Maharashtra.",
+            data_context=_grow_ctx,
+            extra_knowledge=CROP_VARIETY_REFERENCE,
+        )
 
         tab_ai_ask(
             "grow_t1",
@@ -1053,25 +1163,41 @@ elif st.session_state.page == "growing":
 
     with tab3:
         st.markdown(f"**{'AI कृषितज्ञाला विचारा — माती, पिके, शेती पद्धती:' if IS_MR else 'Ask the AI Agronomist — soil, crops, farming practices:'}**")
-        clicked2 = chip_row(get_chips("grow")[3:], "g2_chip")
-        for msg in st.session_state.grow_msgs:
-            with st.chat_message(msg["role"]): st.markdown(msg["content"])
-        user_in = st.chat_input(t("chat_input_grow"), key="grow_chat")
-        fq = clicked2 or user_in
-        if fq:
-            st.session_state.grow_msgs.append({"role":"user","content":fq})
-            with st.chat_message("user"): st.markdown(fq)
-            with st.chat_message("assistant"):
-                with st.spinner("…"):
-                    r = ask_gemini(
-                        fq,
+        chip_row(get_chips("grow")[3:], "g2_chip")
+        _g2_pending = st.session_state.pop("g2_chip_pending", None)
+        if _g2_pending:
+            with st.spinner(t("chip_working")):
+                try:
+                    _r = ask_gemini(
+                        expand_chip_question(_g2_pending, "grow"),
                         context="You specialise in crop science and soil chemistry for Maharashtra.",
                         extra_knowledge=CROP_VARIETY_REFERENCE,
                     )
-                st.markdown(r)
-            st.session_state.grow_msgs.append({"role":"assistant","content":r})
+                except Exception as _ex:
+                    _r = f"❌ {_ex}"
+            st.session_state.grow_msgs.append({"role": "user", "content": _g2_pending})
+            st.session_state.grow_msgs.append({"role": "assistant", "content": _r})
+        for msg in st.session_state.grow_msgs:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+        user_in = st.chat_input(t("chat_input_grow"), key="grow_chat")
+        if user_in:
+            st.session_state.grow_msgs.append({"role": "user", "content": user_in})
+            with st.spinner(t("chip_working")):
+                try:
+                    r = ask_gemini(
+                        user_in,
+                        context="You specialise in crop science and soil chemistry for Maharashtra.",
+                        extra_knowledge=CROP_VARIETY_REFERENCE,
+                    )
+                except Exception as _ex:
+                    r = f"❌ {_ex}"
+            st.session_state.grow_msgs.append({"role": "assistant", "content": r})
+            st.rerun()
         if st.session_state.grow_msgs:
-            if st.button(t("clear_chat"), key="clr_g"): st.session_state.grow_msgs=[]; st.rerun()
+            if st.button(t("clear_chat"), key="clr_g"):
+                st.session_state.grow_msgs = []
+                st.rerun()
 
 # ══════════════════════════════════════════════════
 # MAINTAINING
@@ -1088,7 +1214,7 @@ elif st.session_state.page == "maintaining":
     crop_display = crops_mr if IS_MR else crops_list
 
     with tab1:
-        clicked = chip_row(get_chips("maintain")[:4], "m_chip")
+        chip_row(get_chips("maintain")[:4], "m_pest")
         col_l, col_r = st.columns(2)
         with col_l:
             crop_sel = st.selectbox(t("crop_lbl"), crop_display, key="m_crop")
@@ -1121,10 +1247,13 @@ elif st.session_state.page == "maintaining":
                     context="You are a plant pathologist and crop physiologist for Maharashtra.",
                 )
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
-        if clicked:
-            with st.spinner("…"):
-                res = ask_gemini(clicked, context="You advise on pest, disease, and crop maintenance in Maharashtra.")
-            st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
+
+        finish_chip_qa(
+            "m_pest",
+            "maintain",
+            "You are a plant pathologist and crop maintenance expert for Maharashtra.",
+            data_context=f"Crop: {crop_en}, Stage: {growth}, Region: {region}, Symptoms note: {(symptom or '')[:500]}",
+        )
 
         tab_ai_ask(
             "maint_t1",
@@ -1133,7 +1262,7 @@ elif st.session_state.page == "maintaining":
         )
 
     with tab2:
-        clicked2 = chip_row(get_chips("maintain")[3:], "m2_chip")
+        chip_row(get_chips("maintain")[3:], "m_nutr")
         col_a,col_b = st.columns(2)
         with col_a:
             crop_n = st.selectbox(t("crop_lbl"), crop_display, key="n_crop")
@@ -1164,10 +1293,19 @@ elif st.session_state.page == "maintaining":
                 res = ask_gemini(prompt, data_context=data_ctx)
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
 
-        if clicked2:
-            with st.spinner("…"):
-                res = ask_gemini(clicked2, context="You advise on irrigation and nutrition for Maharashtra.")
-            st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
+        try:
+            _srn = soil_df[soil_df["Soil_Type"] == soil_n_en].iloc[0]
+            _nk_hint = f"N {_srn['N_kg_ha']} kg/ha (ICAR-style ref)"
+        except Exception:
+            _nk_hint = "soil row N/A"
+        finish_chip_qa(
+            "m_nutr",
+            "maintain",
+            "You advise on irrigation and nutrition schedules for Maharashtra crops.",
+            data_context=(
+                f"Crop: {crop_n_en}, Soil: {soil_n_en}, Irrigation: {irr}, Area (ha): {area}. {_nk_hint}."
+            ),
+        )
 
         tab_ai_ask(
             "maint_t2",
@@ -1176,21 +1314,36 @@ elif st.session_state.page == "maintaining":
         )
 
     with tab3:
+        chip_row(get_chips("maintain")[4:], "m3_chip")
+        _m3 = st.session_state.pop("m3_chip_pending", None)
+        if _m3:
+            with st.spinner(t("chip_working")):
+                try:
+                    _rm = ask_gemini(
+                        expand_chip_question(_m3, "maintain"),
+                        context="You are a crop health expert for Maharashtra.",
+                    )
+                except Exception as _ex:
+                    _rm = f"❌ {_ex}"
+            st.session_state.maintain_msgs.append({"role": "user", "content": _m3})
+            st.session_state.maintain_msgs.append({"role": "assistant", "content": _rm})
         for msg in st.session_state.maintain_msgs:
-            with st.chat_message(msg["role"]): st.markdown(msg["content"])
-        c3 = chip_row(get_chips("maintain")[4:], "m3_chip")
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
         user_in = st.chat_input(t("chat_input_maint"), key="m_chat")
-        fq = c3 or user_in
-        if fq:
-            st.session_state.maintain_msgs.append({"role":"user","content":fq})
-            with st.chat_message("user"): st.markdown(fq)
-            with st.chat_message("assistant"):
-                with st.spinner("…"):
-                    r = ask_gemini(fq, context="You are a crop health expert for Maharashtra.")
-                st.markdown(r)
-            st.session_state.maintain_msgs.append({"role":"assistant","content":r})
+        if user_in:
+            st.session_state.maintain_msgs.append({"role": "user", "content": user_in})
+            with st.spinner(t("chip_working")):
+                try:
+                    r = ask_gemini(user_in, context="You are a crop health expert for Maharashtra.")
+                except Exception as _ex:
+                    r = f"❌ {_ex}"
+            st.session_state.maintain_msgs.append({"role": "assistant", "content": r})
+            st.rerun()
         if st.session_state.maintain_msgs:
-            if st.button(t("clear_chat"), key="clr_m"): st.session_state.maintain_msgs=[]; st.rerun()
+            if st.button(t("clear_chat"), key="clr_m"):
+                st.session_state.maintain_msgs = []
+                st.rerun()
 
 # ══════════════════════════════════════════════════
 # SELLING
@@ -1252,21 +1405,38 @@ elif st.session_state.page == "selling":
             )
             st.plotly_chart(fig_price, use_container_width=True)
 
-            # Arrival bubble chart
-            fig_arr = px.scatter(
-                filt, x="Market", y="Modal_Price", size="Arrival_MT",
-                color="District", size_max=55,
-                title=f"{'मोडल भाव व आवक' if IS_MR else 'Modal Price vs Arrival Volume'} — {crop_sel_d}",
-                labels={"Modal_Price":"₹/qtl","Arrival_MT":"Arrival (MT)"},
-                color_discrete_sequence=GREEN_PALETTE,
-            )
-            fig_arr.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
-                margin=dict(l=10,r=10,t=45,b=10), height=340,
-                xaxis=dict(showgrid=False, tickangle=-35),
-                yaxis=dict(gridcolor="rgba(210,240,220,.5)"),
-            )
+            # Arrival bubble chart (sanitized dtypes for Plotly Express)
+            try:
+                _fd = filt.copy()
+                _fd["District"] = _fd["District"].astype(str)
+                _fd["Market"] = _fd["Market"].astype(str)
+                _fd["Arrival_MT"] = pd.to_numeric(_fd["Arrival_MT"], errors="coerce").fillna(0).clip(lower=1)
+                _fd["Modal_Price"] = pd.to_numeric(_fd["Modal_Price"], errors="coerce")
+                _fd = _fd.dropna(subset=["Modal_Price"])
+                if _fd.empty:
+                    fig_arr = go.Figure()
+                else:
+                    fig_arr = px.scatter(
+                        _fd,
+                        x="Market",
+                        y="Modal_Price",
+                        size="Arrival_MT",
+                        color="District",
+                        size_max=55,
+                        title=f"{'मोडल भाव व आवक' if IS_MR else 'Modal Price vs Arrival Volume'} — {crop_sel_d}",
+                        labels={"Modal_Price": "₹/qtl", "Arrival_MT": "Arrival (MT)"},
+                        color_discrete_sequence=GREEN_PALETTE,
+                    )
+                    fig_arr.update_layout(
+                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                        font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
+                        margin=dict(l=10, r=10, t=45, b=10), height=340,
+                        xaxis=dict(showgrid=False, tickangle=-35),
+                        yaxis=dict(gridcolor="rgba(210,240,220,.5)"),
+                    )
+            except Exception as _sc_ex:
+                st.caption(f"Scatter chart skipped: {_sc_ex}" if not IS_MR else f"स्कॅटर आलेख: {_sc_ex}")
+                fig_arr = go.Figure()
             st.plotly_chart(fig_arr, use_container_width=True)
 
             # Table
@@ -1294,24 +1464,25 @@ elif st.session_state.page == "selling":
                 f"Crop {crop_sel}: modal ₹{int(filt['Modal_Price'].min())}–₹{int(filt['Modal_Price'].max())}/qtl across "
                 f"{filt['District'].nunique()} districts in dataset."
             )
+        chip_row(get_chips("sell")[:3], "s_price")
+        _sell_dctx = _price_ctx or f"Crop filter: {crop_sel}. No rows for current filters."
+        if not filt.empty:
+            _sell_dctx = (
+                f"{_sell_dctx} Modal ₹{int(filt['Modal_Price'].min())}–₹{int(filt['Modal_Price'].max())}/qtl, "
+                f"markets: {filt['Market'].nunique()}, districts: {filt['District'].nunique()}."
+            )
+        finish_chip_qa(
+            "s_price",
+            "sell",
+            "You advise Maharashtra farmers on crop marketing, mandi prices, and timing.",
+            data_context=_sell_dctx,
+        )
+
         tab_ai_ask(
             "sell_t1",
             "You interpret mandi prices, arrivals, and timing for selling in Maharashtra.",
             data_context=_price_ctx,
         )
-
-        clicked_s = chip_row(get_chips("sell")[:3], "s_chip")
-        if clicked_s:
-            data_ctx = (
-                f"Crop: {crop_sel}, modal range ₹{min_m if not filt.empty else 'N/A'}–₹{max_m if not filt.empty else 'N/A'}/qtl"
-            )
-            with st.spinner("…"):
-                res = ask_gemini(
-                    clicked_s,
-                    context="You advise Maharashtra farmers on crop marketing.",
-                    data_context=data_ctx if not filt.empty else "",
-                )
-            st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
 
     with tab2:
         st.markdown(f"**{'किमान आधारभूत किंमत (MSP) 2024-25' if IS_MR else 'Minimum Support Price (MSP) 2024-25'}** *(CACP — Ministry of Agriculture, GoI)*")
@@ -1325,44 +1496,66 @@ elif st.session_state.page == "selling":
         msp_key = cat_map.get(msp_cat, msp_cat)
         msp_filt = msp_df if msp_key == "All" else msp_df[msp_df["Season"] == msp_key]
 
-        # MSP bar chart
-        fig_msp = px.bar(
-            msp_filt.sort_values("MSP_2024_25", ascending=False),
-            x="Crop_MR" if IS_MR else "Crop",
-            y=["MSP_2023_24","MSP_2024_25"],
-            barmode="group",
-            title="MSP 2023-24 vs 2024-25 (₹/qtl)" if not IS_MR else "MSP 2023-24 विरुद्ध 2024-25 (₹/qtl)",
-            labels={"value":"₹/qtl","variable":"Year"},
-            color_discrete_sequence=["#95d5b2","#1a4731"],
-            text_auto=True,
-        )
-        fig_msp.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
-            xaxis=dict(showgrid=False, tickangle=-40),
-            yaxis=dict(gridcolor="rgba(210,240,220,.5)", title="₹/quintal"),
-            margin=dict(l=10,r=10,t=45,b=10), height=370,
-        )
+        # MSP bar chart (melted long form — avoids Plotly Express wide-y errors)
+        try:
+            if msp_filt.empty:
+                raise ValueError("No MSP rows for this filter")
+            cx = "Crop_MR" if IS_MR else "Crop"
+            _cols = [cx, "MSP_2023_24", "MSP_2024_25"]
+            plot_m = msp_filt.sort_values("MSP_2024_25", ascending=False)[_cols].copy()
+            plot_m = plot_m.rename(columns={cx: "__crop"})
+            melted = plot_m.melt(id_vars=["__crop"], var_name="Year", value_name="MSP")
+            melted["Year"] = melted["Year"].map(
+                {"MSP_2023_24": "2023-24", "MSP_2024_25": "2024-25"}
+            ).fillna(melted["Year"])
+            fig_msp = px.bar(
+                melted,
+                x="__crop",
+                y="MSP",
+                color="Year",
+                barmode="group",
+                title="MSP 2023-24 vs 2024-25 (₹/qtl)" if not IS_MR else "MSP 2023-24 विरुद्ध 2024-25 (₹/qtl)",
+                labels={"__crop": ("पिक" if IS_MR else "Crop"), "MSP": "₹/qtl"},
+                color_discrete_sequence=["#95d5b2", "#1a4731"],
+                text_auto=".0f",
+            )
+            fig_msp.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
+                xaxis=dict(showgrid=False, tickangle=-40),
+                yaxis=dict(gridcolor="rgba(210,240,220,.5)", title="₹/quintal"),
+                margin=dict(l=10, r=10, t=45, b=10), height=370,
+            )
+        except Exception as _msp_ex:
+            st.warning(f"MSP chart: {_msp_ex}" if not IS_MR else f"MSP आलेख: {_msp_ex}")
+            fig_msp = go.Figure()
         st.plotly_chart(fig_msp, use_container_width=True)
 
         # Hike % chart
-        fig_hike = px.bar(
-            msp_filt.sort_values("Increase_pct", ascending=False),
-            x="Crop_MR" if IS_MR else "Crop",
-            y="Increase_pct",
-            title="MSP Hike % (2024-25 over 2023-24)" if not IS_MR else "MSP वाढ % (2024-25, 2023-24 पेक्षा)",
-            color="Increase_pct",
-            color_continuous_scale=["#d8f3dc","#2d6a4f"],
-            text_auto=True,
-        )
-        fig_hike.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
-            xaxis=dict(showgrid=False, tickangle=-40),
-            yaxis=dict(gridcolor="rgba(210,240,220,.5)", title="%"),
-            margin=dict(l=10,r=10,t=45,b=10), height=320,
-            coloraxis_showscale=False,
-        )
+        try:
+            msp_h = msp_filt.copy()
+            msp_h["Increase_pct"] = pd.to_numeric(msp_h["Increase_pct"], errors="coerce").fillna(0)
+            cx2 = "Crop_MR" if IS_MR else "Crop"
+            fig_hike = px.bar(
+                msp_h.sort_values("Increase_pct", ascending=False),
+                x=cx2,
+                y="Increase_pct",
+                title="MSP Hike % (2024-25 over 2023-24)" if not IS_MR else "MSP वाढ % (2024-25, 2023-24 पेक्षा)",
+                color="Increase_pct",
+                color_continuous_scale=["#d8f3dc", "#2d6a4f"],
+                text_auto=".1f",
+            )
+            fig_hike.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
+                xaxis=dict(showgrid=False, tickangle=-40),
+                yaxis=dict(gridcolor="rgba(210,240,220,.5)", title="%"),
+                margin=dict(l=10, r=10, t=45, b=10), height=320,
+                coloraxis_showscale=False,
+            )
+        except Exception as _h_ex:
+            st.warning(f"Hike chart: {_h_ex}" if not IS_MR else f"वाढ आलेख: {_h_ex}")
+            fig_hike = go.Figure()
         st.plotly_chart(fig_hike, use_container_width=True)
 
         # Table
@@ -1381,7 +1574,7 @@ elif st.session_state.page == "selling":
         )
 
     with tab3:
-        clicked_s2 = chip_row(get_chips("sell")[2:5], "s2_chip")
+        chip_row(get_chips("sell")[2:5], "s_ai")
         col_a2,col_b2 = st.columns(2)
         with col_a2:
             crop_ai_d = st.selectbox(t("crop_lbl"), crop_disp, key="ai_crop")
@@ -1428,10 +1621,18 @@ elif st.session_state.page == "selling":
             st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
             st.markdown(f'<p class="src-tag">{t("ai_source")}</p>', unsafe_allow_html=True)
 
-        if clicked_s2:
-            with st.spinner("…"):
-                res = ask_gemini(clicked_s2, context="You advise on crop sales and markets in Maharashtra.")
-            st.markdown(f'<div class="resp-box">{res}</div>', unsafe_allow_html=True)
+        _sell_ai_ctx = f"Crop: {crop_ai}, qty {qty} qtl, harvest: {harvest_in}, storage: {storage}."
+        cd = price_df[price_df["Crop"] == crop_ai]
+        if not cd.empty:
+            _sell_ai_ctx += (
+                f" Dataset modal range ₹{int(cd['Modal_Price'].min())}–₹{int(cd['Modal_Price'].max())}/qtl."
+            )
+        finish_chip_qa(
+            "s_ai",
+            "sell",
+            "You advise on crop sales, APMC choice, and market strategy in Maharashtra.",
+            data_context=_sell_ai_ctx,
+        )
 
         tab_ai_ask(
             "sell_t3",
@@ -1440,18 +1641,36 @@ elif st.session_state.page == "selling":
         )
 
     with tab4:
-        c_s3 = chip_row(get_chips("sell")[4:], "s3_chip")
+        chip_row(get_chips("sell")[4:], "s3_chip")
+        _s4 = st.session_state.pop("s3_chip_pending", None)
+        if _s4:
+            with st.spinner(t("chip_working")):
+                try:
+                    _rs = ask_gemini(
+                        expand_chip_question(_s4, "sell"),
+                        context="You are a commodity market expert for Maharashtra farmers.",
+                    )
+                except Exception as _ex:
+                    _rs = f"❌ {_ex}"
+            st.session_state.sell_msgs.append({"role": "user", "content": _s4})
+            st.session_state.sell_msgs.append({"role": "assistant", "content": _rs})
         for msg in st.session_state.sell_msgs:
-            with st.chat_message(msg["role"]): st.markdown(msg["content"])
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
         user_in = st.chat_input(t("chat_input_sell"), key="s_chat")
-        fq = c_s3 or user_in
-        if fq:
-            st.session_state.sell_msgs.append({"role":"user","content":fq})
-            with st.chat_message("user"): st.markdown(fq)
-            with st.chat_message("assistant"):
-                with st.spinner("…"):
-                    r = ask_gemini(fq, "You are a commodity market expert for Maharashtra farmers.")
-                st.markdown(r)
-            st.session_state.sell_msgs.append({"role":"assistant","content":r})
+        if user_in:
+            st.session_state.sell_msgs.append({"role": "user", "content": user_in})
+            with st.spinner(t("chip_working")):
+                try:
+                    r = ask_gemini(
+                        user_in,
+                        context="You are a commodity market expert for Maharashtra farmers.",
+                    )
+                except Exception as _ex:
+                    r = f"❌ {_ex}"
+            st.session_state.sell_msgs.append({"role": "assistant", "content": r})
+            st.rerun()
         if st.session_state.sell_msgs:
-            if st.button(t("clear_chat"), key="clr_s"): st.session_state.sell_msgs=[]; st.rerun()
+            if st.button(t("clear_chat"), key="clr_s"):
+                st.session_state.sell_msgs = []
+                st.rerun()
