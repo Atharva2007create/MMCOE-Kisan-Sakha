@@ -10,7 +10,7 @@ from datetime import datetime
 st.set_page_config(page_title="Kisan Sakha v5.0", page_icon="🌾", layout="wide")
 
 # BACKEND API KEY (Place your key here for internal use)
-BACKEND_API_KEY = "" 
+BACKEND_API_KEY = "AIzaSyAKYBPvIwVK4324VDiXhTNAjUcksv69LNQ" 
 
 # ══════════════════════════════════════════════════
 # 2. DATASETS (MAHARASHTRA RAG CONTEXT)
