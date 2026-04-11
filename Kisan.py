@@ -16,11 +16,11 @@ import google.generativeai as genai
 import requests
 
 # Backend: GOOGLE_API_KEY only (create at https://aistudio.google.com/apikey).
-_ENV_GOOGLE_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or "").strip()
+_ENV_GOOGLE_KEY = (os.environ.get("GOOGLE_API_KEY") or "").strip()
 _GEMINI_MODEL = "gemini-2.5-flash"  # model id for the Generative AI API (not a second API key)
 
 # data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
-_ENV_DATA_GOV_KEY = (os.environ.get("AIzaSyC_3Yg-nMxyAorD2cuaKpA6fwKJd0F_PEo") or "").strip()
+_ENV_DATA_GOV_KEY = (os.environ.get("DATA_GOV_IN_API_KEY") or "").strip()
 
 # Google Maps Platform — Weather API (optional). Enable "Weather API" on your GCP project and billing.
 # Docs: https://developers.google.com/maps/documentation/weather/overview
@@ -848,6 +848,10 @@ hr{border-color:var(--g5)!important;}
 .weather-strip-collapsed:hover{box-shadow:0 10px 32px rgba(13,43,26,.2);transform:translateY(-1px);}
 .weather-strip-title{color:#fff!important;font-weight:600;font-size:1rem;margin:0!important;line-height:1.25;}
 .weather-strip-hint{color:rgba(216,243,220,.88)!important;font-size:.74rem;margin:.2rem 0 0!important;line-height:1.35;}
+.weather-panel-expanded .weather-strip-title{color:#0d2b1a!important;}
+.weather-panel-expanded .weather-strip-hint{color:#3d5a45!important;}
+.weather-panel-expanded{color:#0d2b1a!important;}
+.weather-panel-expanded p,.weather-panel-expanded div,.weather-panel-expanded span,.weather-panel-expanded strong,.weather-panel-expanded .weather-now-temp,.weather-panel-expanded .weather-now-meta{color:#0d2b1a!important;}
 .weather-panel-expanded{
   background:linear-gradient(180deg,#ffffff 0%,#f2faf5 100%);
   border:1px solid rgba(45,106,79,.22);border-radius:16px;padding:1rem 1.2rem 1.25rem;
@@ -1060,22 +1064,500 @@ def chip_row(chips_list, prefix):
                 st.session_state[f"{prefix}_pending"] = chip
 
 
+CHIP_STATIC_ANSWERS = {
+    # GROW chips
+    "Best crop for black cotton soil pH 7.8?": """**Best Crops for Black Cotton Soil at pH 7.8**
+
+Black cotton soil (Vertisol) at pH 7.8 is slightly alkaline and very fertile — ideal for many Maharashtra crops.
+
+**Top recommended crops:**
+- 🌿 **Cotton** — the classic choice; thrives in black soil with good moisture retention. Use Bt hybrids (Bunny, NHH-44) or desi varieties (PKV Rajat).
+- 🟡 **Soybean** — excellent cash crop; varieties JS-335, MAUS-71, Phule Kimaya. Fixes nitrogen naturally.
+- 🌾 **Wheat (Rabi)** — Lok-1, GW-496 perform well. Requires 3–4 irrigations.
+- 🫘 **Tur Dal (Arhar)** — BDN-711, BDN-716. Drought tolerant, good for Vidarbha/Marathwada.
+- 🧅 **Onion** — Bhima Kiran, Bhima Shakti. Needs well-drained raised beds.
+- 🌻 **Sunflower** — KBSH-44, Phule Raviraj for summer season.
+
+**pH 7.8 management tip:** Add gypsum (250 kg/ha) or organic matter (FYM 10 t/ha) to slightly lower pH and improve soil structure. Zinc deficiency is common — apply ZnSO₄ @ 25 kg/ha basal dose.
+
+*Verify with your local KVK or Agriculture Department before sowing.*""",
+
+    "Kharif sowing calendar for Vidarbha 2024?": """**Kharif Sowing Calendar — Vidarbha, Maharashtra**
+
+| Crop | Sowing Window | Seed Rate | Spacing |
+|------|--------------|-----------|---------|
+| Cotton (Bt hybrid) | 1–20 June | 450g/ha | 90×60 cm |
+| Soybean | 15 June – 10 July | 75 kg/ha | 45×5 cm |
+| Tur Dal | 15 June – 5 July | 15–18 kg/ha | 90×30 cm |
+| Maize | 15 June – 15 July | 20 kg/ha | 60×20 cm |
+| Moong | 1–20 July | 20–25 kg/ha | 30×10 cm |
+| Jowar (Kharif) | 15 June – 15 July | 10 kg/ha | 45×15 cm |
+| Groundnut | 10–30 June | 100 kg/ha | 30×10 cm |
+
+**Monsoon onset in Vidarbha:** Typically 10–15 June. Sow within 7 days of good pre-monsoon rain (≥50 mm).
+
+**Key tips:**
+- Treat seeds with Thiram + Carbendazim (2+1 g/kg) before sowing
+- Apply soil test-based fertiliser at sowing
+- Use broad-based furrows (BBF) for excess water drainage in low-lying fields
+
+*Source: PDKV Akola / VNMKV Parbhani recommendations*""",
+
+    "How to fix nitrogen deficiency in soybean?": """**Fixing Nitrogen Deficiency in Soybean**
+
+**Symptoms:** Yellowing of older (lower) leaves starting from leaf tips, stunted growth, pale green plants.
+
+**Why it happens:** Poor nodulation due to soil acidity, waterlogging, or lack of Rhizobium bacteria.
+
+**Correction steps:**
+1. **Seed treatment (preventive):** Treat seeds with Rhizobium japonicum culture @ 250 g/10 kg seed before sowing. This is the most cost-effective fix.
+2. **Basal dose:** Apply DAP 100 kg/ha (46% P) at sowing — phosphorus helps root development and nodulation.
+3. **Foliar spray (curative):** Spray 2% urea (20 g/litre water) at 25–30 days after sowing. Repeat after 10 days if needed.
+4. **Top dressing:** Apply urea 50 kg/ha if nodulation has completely failed (check roots — healthy nodules are pink inside).
+
+**Important:** Do NOT over-apply nitrogen to soybean — it suppresses natural nitrogen fixation. If Rhizobium nodulation is good, no extra N is needed after initial 20 kg N/ha starter dose.
+
+**Check soil pH:** If pH < 6.5, apply lime (agricultural limestone) @ 2–3 t/ha to improve nodulation.
+
+*Verify with KVK Latur / Osmanabad / Nanded for local recommendations.*""",
+
+    "Fertiliser dose for cotton per hectare?": """**Fertiliser Dose for Cotton (per hectare) — Maharashtra**
+
+**For Bt Hybrid Cotton on Black Soil:**
+
+| Nutrient | Recommended Dose | Source |
+|---------|-----------------|--------|
+| Nitrogen (N) | 120 kg/ha | Urea @ 261 kg/ha |
+| Phosphorus (P₂O₅) | 60 kg/ha | DAP or SSP |
+| Potassium (K₂O) | 60 kg/ha | MOP @ 100 kg/ha |
+| Zinc (ZnSO₄) | 25 kg/ha | Basal (if deficient) |
+
+**Application schedule:**
+- **Basal (at sowing):** Full P + K + 25% N (30 kg N/ha) + ZnSO₄
+- **Top dressing 1 (30–35 DAS):** 50% N (60 kg N/ha) — during vegetative stage
+- **Top dressing 2 (60–65 DAS):** 25% N (30 kg N/ha) — before flowering
+
+**Foliar supplements:**
+- Boron (Borax 0.2%) spray at bud formation stage
+- Magnesium sulphate (MgSO₄) 1% at flowering if Mg deficiency observed
+
+**FYM/Organic:** Apply FYM 10–15 t/ha as pre-sowing — reduces need for chemical fertiliser by 25%.
+
+*Source: PKV Akola / Maharashtra Agriculture Department*""",
+
+    "Intercropping options after sugarcane?": """**Intercropping Options with/After Sugarcane — Maharashtra**
+
+**During sugarcane ratoon / in interrows (plant crop):**
+- 🫘 **Soybean** — most popular; 2 rows between cane rows. Harvest in 90–100 days. Fixes N for cane.
+- 🟤 **Groundnut** — Kharif; fits well in wider cane spacing (90 cm+).
+- 🌿 **Moong / Urad** — short duration (60–75 days); very compatible with young sugarcane.
+- 🧅 **Onion (Rabi)** — highly profitable intercrop in sugarcane planted September–October.
+- 🥬 **Leafy vegetables** — coriander, fenugreek in initial 2–3 months.
+
+**After sugarcane harvest (sequence cropping):**
+- **Wheat** (Rabi) — excellent; soil enriched by cane trash, high yield.
+- **Chickpea (Rabi)** — drought-tolerant, minimal input.
+- **Sunflower** — summer crop; good market in Kolhapur/Sangli.
+- **Soybean** (next Kharif) — breaks pest cycle from cane.
+
+**Economics:** Soybean intercrop in sugarcane typically gives additional ₹15,000–25,000/ha income without reducing cane yield significantly.
+
+*Recommended by Vasantdada Sugar Institute (VSI), Pune*""",
+
+    "Organic farming certification in Maharashtra?": """**Organic Farming Certification in Maharashtra**
+
+**Steps to get certified:**
+
+1. **Choose a certifying agency** — APEDA-accredited bodies operating in Maharashtra:
+   - ISCOP (Indocert), IMO Control, OneCert, Ecocert India, Lacon Quality Certification
+
+2. **Conversion period:** Your farm must be managed organically for **3 years** before getting full certification. During this period you can get "in-conversion" certificate.
+
+3. **Documents needed:**
+   - Land records (7/12 extract)
+   - Land history of past 3 years
+   - Farm map / sketch
+   - Input purchase records (no chemical purchases)
+   - Crop diary / field log
+
+4. **Government schemes:**
+   - **Paramparagat Krishi Vikas Yojana (PKVY)** — ₹50,000/ha over 3 years, group of 50 farmers minimum
+   - **Maharashtra Organic Farming Mission** — contact District Agriculture Office
+   - **PGS-India** (Participatory Guarantee System) — low-cost group certification for small farmers
+
+5. **Market linkage:** Register on **India Organic** portal (apeda.gov.in) for export. Local: Pune Organic Farmers Market, Mahaorganic outlets.
+
+**Cost:** Individual certification ₹8,000–15,000/year. Group (PGS) much cheaper.
+
+*Contact: Maharashtra State Agriculture Dept, Pune — 020-26050075*""",
+
+    # MAINTAIN chips
+    "Yellow leaves on soybean — what's wrong?": """**Yellow Leaves on Soybean — Diagnosis Guide**
+
+**Possible causes (check each):**
+
+🟡 **1. Nitrogen deficiency (most common)**
+- Lower/older leaves turn yellow first
+- Fix: Foliar spray 2% urea; ensure Rhizobium seed treatment was done
+
+🟡 **2. Yellow Mosaic Virus (YMV)**
+- Scattered yellow patches on leaves, mosaic pattern
+- Spread by whitefly; no cure — uproot affected plants
+- Prevention: Imidacloprid seed treatment 5 ml/kg; plant early
+
+🟡 **3. Iron deficiency**
+- Young (top) leaves turn yellow, veins stay green (interveinal chlorosis)
+- Fix: Spray FeSO₄ 0.5% + citric acid 0.1% twice at 7-day interval
+
+🟡 **4. Waterlogging**
+- All leaves yellowing, roots blackened
+- Fix: Improve drainage immediately; make BBF ridges
+
+🟡 **5. Rhizoctonia root rot**
+- Yellowing + brown lesions on stem near soil
+- Fix: Drench with Carbendazim 0.1% near roots
+
+**Quick check:** Pull a plant and examine roots — pink/red nodules = good nitrogen fixation. No nodules = apply Rhizobium + 2% urea spray.
+
+*Confirm with KVK agronomist if disease suspected.*""",
+
+    "Bollworm attack on cotton — organic control?": """**Bollworm Attack on Cotton — Organic & IPM Control**
+
+**Types of bollworms in Maharashtra cotton:**
+- Pink bollworm (Pectinophora gossypiella) — most damaging
+- American bollworm (Helicoverpa armigera)
+- Spotted bollworm (Earias spp.)
+
+**Organic / IPM control measures:**
+
+🌿 **Cultural:**
+- Deep summer ploughing (May) — destroys pupae in soil
+- Destroy crop stubble after harvest immediately
+- Avoid late sowing (after 20 June) — reduces pest pressure
+
+🪤 **Pheromone traps:**
+- Install Helilure/Pectilure traps @ 5/ha from 45 DAS
+- Monitor weekly; >8 moths/trap/week = spray threshold
+
+🦠 **Biological sprays:**
+- **Bt (Bacillus thuringiensis)** spray 1 kg/ha at first instar larvae — very effective
+- **NPV (Nuclear Polyhedrosis Virus)** for Helicoverpa: 250 LE/ha
+- **Neem oil** 5% or Azadirachtin 1500 ppm @ 5 ml/litre — repellent + anti-feedant
+
+🌱 **Botanical:**
+- Spray neem seed kernel extract (NSKE) 5% at flowering
+- Profenofos + Cypermethrin (permitted in IPM) as last resort
+
+**Economic threshold:** Spray when 5–10% bolls show damage or 1–2 larvae/plant.
+
+*Source: CICR Nagpur / PKV Akola IPM guidelines*""",
+
+    "Fungicide spray schedule for grapes Nashik?": """**Fungicide Spray Schedule for Grapes — Nashik Region**
+
+**Key diseases in Nashik grapes:**
+- Downy Mildew (Plasmopara viticola) — most critical
+- Powdery Mildew (Uncinula necator)
+- Botrytis (bunch rot) — near harvest
+
+**Spray schedule (Kharif / pre-harvest pruning cycle):**
+
+| Stage | Disease | Fungicide | Dose/100L |
+|-------|---------|-----------|-----------|
+| Bud burst (0–7 days) | Downy mildew | Bordeaux mixture 0.5% | — |
+| 2-leaf stage | Downy + Powdery | Mancozeb 75% WP | 250 g |
+| 4-leaf stage | Downy mildew | Metalaxyl-M + Mancozeb | 200 g |
+| Flowering | Powdery mildew | Hexaconazole 5% EC | 20 ml |
+| Berry set | Both | Fosetyl-Al (Aliette) | 250 g |
+| Berry development | Downy mildew | Cymoxanil + Mancozeb | 300 g |
+| Pre-harvest (30 days) | Botrytis | Carbendazim 50% WP | 100 g |
+
+**Key rules:**
+- Alternate fungicide groups to prevent resistance
+- Spray in early morning or evening (avoid afternoon heat)
+- Maintain 10–14 day intervals
+- Follow Pre-Harvest Interval (PHI) strictly for export grapes
+
+*Source: NRC for Grapes, Pune / Mahagrapes cooperative*""",
+
+    "Iron & zinc deficiency symptoms & treatment?": """**Iron & Zinc Deficiency in Maharashtra Crops**
+
+**Iron (Fe) Deficiency:**
+- *Symptoms:* Young leaves (growing tips) turn yellow while leaf veins remain green — called interveinal chlorosis. Common in alkaline/calcareous soils (pH > 7.5), Marathwada, Vidarbha.
+- *Crops affected:* Soybean, chickpea, groundnut, sorghum, maize
+- *Treatment:*
+  - Soil: FeSO₄ @ 25–50 kg/ha mixed with FYM before sowing
+  - Foliar: FeSO₄ 0.5% + Citric acid 0.1% spray; 2–3 sprays at 7-day intervals
+  - Chelated Fe (Fe-EDTA) 0.2% spray — more effective in alkaline soils
+
+**Zinc (Zn) Deficiency:**
+- *Symptoms:* Brown/rust spots on older leaves, shortened internodes, "khaira" disease in paddy, small leaves, delayed maturity
+- *Crops affected:* Paddy, wheat, maize, sugarcane, cotton
+- *Treatment:*
+  - Soil: ZnSO₄·7H₂O @ 25 kg/ha basal; repeat every 2–3 years
+  - Foliar: ZnSO₄ 0.5% spray (+ lime 0.25% to avoid leaf burn) — 2 sprays
+  - Seed treatment: ZnSO₄ solution soaking for 12 hours before sowing
+
+**Prevention:** Soil Health Card testing every 3 years — apply nutrients based on report. Both Fe and Zn deficiencies are very common in black and alkaline soils of Maharashtra.
+
+*Apply during cool hours to avoid leaf scorch.*""",
+
+    "Drip irrigation schedule for onion per stage?": """**Drip Irrigation Schedule for Onion — Maharashtra**
+
+**Variety:** Bhima Kiran / Bhima Shakti (Rabi onion, Oct–Mar)
+**System:** Drip with inline drip laterals, 1.5 LPH emitters
+
+| Growth Stage | Duration | Water Requirement | Drip Hours/Day | Interval |
+|-------------|----------|-----------------|---------------|----------|
+| Transplanting | Days 1–10 | 6–8 mm/day | 3–4 hours | Daily |
+| Early vegetative | Days 11–30 | 5–6 mm/day | 2–3 hours | Daily |
+| Bulb initiation | Days 31–60 | 6–8 mm/day | 3–4 hours | Daily |
+| Bulb development | Days 61–90 | 8–10 mm/day | 4–5 hours | Daily |
+| Maturity | Days 91–100 | 3–4 mm/day | 1–2 hours | Every 2 days |
+| Pre-harvest | Days 101–110 | Stop irrigation | — | Stop 10 days before harvest |
+
+**Fertigation through drip:**
+- Days 1–30: 19:19:19 (NPK) @ 3 kg/day/ha
+- Days 31–60: 12:61:0 (MAP) @ 2 kg + KNO₃ 2 kg/day/ha
+- Days 61–90: 0:0:50 (SOP) @ 3 kg/day/ha for bulb size
+- Calcium nitrate 2 kg/ha weekly to prevent tip burn
+
+**Water saving:** Drip saves 40–50% water vs flood irrigation and increases yield by 20–30%.
+
+*Source: NIPHM / Maharashtra Agriculture Dept drip guidelines*""",
+
+    "How to manage powdery mildew on grapes?": """**Powdery Mildew Management on Grapes — Maharashtra**
+
+**Cause:** Uncinula necator (fungus). Favoured by warm days (25–30°C) + cool nights + dry weather — common in Nashik, Sangli, Solapur regions.
+
+**Symptoms:** White powdery coating on young leaves, shoots, and berries. Berries crack and dry if severe.
+
+**Management strategy:**
+
+🌿 **Cultural control:**
+- Prune to ensure good air circulation inside canopy
+- Remove and destroy infected shoots immediately
+- Avoid excess nitrogen (promotes soft, susceptible growth)
+
+🧴 **Spray schedule:**
+| Timing | Fungicide | Dose/100L |
+|--------|-----------|-----------|
+| First sign / preventive | Wettable Sulphur 80% | 250–300 g |
+| 7 days after | Dinocap 48% EC | 30 ml |
+| Berry set | Hexaconazole 5% SC | 20 ml |
+| Berry development | Myclobutanil 10% WP | 100 g |
+| Repeat if needed | Tebuconazole 25% WG | 50 g |
+
+**Key rules:**
+- Do NOT spray sulphur when temperature > 35°C (causes phytotoxicity)
+- Alternate chemical groups — avoid hexaconazole more than twice per season
+- Spray undersides of leaves as well
+- Maintain 10-day spray intervals during high-risk period
+
+**Organic option:** Spray potassium bicarbonate (1%) or neem oil 2% as preventive.
+
+*Source: NRC for Grapes Pune / MPKV Rahuri recommendations*""",
+
+    # SELL chips
+    "Best time to sell onion in Nashik 2025?": """**Best Time to Sell Onion in Nashik — 2025 Guide**
+
+**Nashik onion market pattern (Lasalgaon APMC — Asia's largest onion market):**
+
+**Rabi onion (main crop — harvest March–May):**
+- **Peak arrivals:** March–May → prices typically lowest (₹800–1,200/qtl)
+- **Best selling window:** **June–September** when arrivals drop and domestic + export demand rises
+- If you can store: **October–December** often sees prices of ₹2,000–3,500/qtl
+
+**Kharif onion (harvest Oct–Nov):**
+- Low volume crop; prices usually ₹1,500–2,500/qtl
+- Sell immediately after harvest as shelf life is shorter
+
+**2025 outlook factors:**
+- Export demand from Sri Lanka, Malaysia, Bangladesh pushes prices up May–September
+- Government export ban risk: monitor DGFT notifications (ban imposed when domestic prices spike > ₹40/kg retail)
+- Cold storage capacity in Nashik: ~15 lakh MT — store only if prices below ₹1,200/qtl
+
+**Practical tips:**
+- Check Lasalgaon APMC daily price on agmarknet.gov.in
+- Register for e-NAM (enam.gov.in) — access 1,000+ buyers
+- Sort/grade before selling: A-grade (55mm+) fetches 30–40% premium
+
+*Price data: Agmarknet / Lasalgaon APMC records*""",
+
+    "Cotton MSP 2024-25 vs current mandi rate?": """**Cotton MSP 2024-25 vs Mandi Rates — Maharashtra**
+
+**MSP (Minimum Support Price) 2024-25 — CACP declared:**
+| Cotton Type | MSP 2024-25 | MSP 2023-24 | Increase |
+|------------|------------|------------|---------|
+| Medium Staple | ₹7,121/qtl | ₹6,620/qtl | ₹501 (+7.6%) |
+| Long Staple | ₹7,521/qtl | ₹7,020/qtl | ₹501 (+7.1%) |
+
+**Typical mandi rates (Vidarbha APMCs — 2024-25 season):**
+| APMC | Modal Price (₹/qtl) | vs MSP |
+|------|--------------------|----|
+| Nagpur | ₹6,400 | Below MSP |
+| Amravati | ₹6,200 | Below MSP |
+| Yavatmal | ₹6,300 | Below MSP |
+| Wardha | ₹6,500 | Below MSP |
+
+**MSP procurement:**
+- CCI (Cotton Corporation of India) procures at MSP when mandi prices fall below
+- Contact nearest CCI office or District Agriculture Office to register for MSP sale
+- Documents: 7/12 extract, Aadhaar, bank passbook, sowing certificate
+
+**Advice:** If mandi price is below MSP, approach CCI directly. Do NOT sell below MSP without first checking if CCI procurement is active in your district.
+
+*Source: CACP / CCI India / Agmarknet 2024-25 data*""",
+
+    "Which APMC gives best price for soybean?": """**Best APMC for Soybean Prices — Maharashtra**
+
+**Top soybean APMCs (based on Agmarknet 2024-25 data):**
+
+| APMC | District | Modal Price (₹/qtl) | Daily Arrival |
+|------|---------|--------------------|----|
+| Latur | Latur | ₹4,200 | ~5,000 MT |
+| Jalna | Jalna | ₹4,300 | ~3,500 MT |
+| Aurangabad | Aurangabad | ₹4,400 | ~3,000 MT |
+| Osmanabad | Osmanabad | ₹4,100 | ~4,000 MT |
+| Nanded | Nanded | ₹4,150 | ~3,500 MT |
+
+**MSP 2024-25:** ₹4,892/qtl (CACP). If mandi prices are below this, sell through NAFED/state procurement or wait.
+
+**Tips to get better price:**
+1. **Grade your produce:** Clean, dry soybean (moisture < 12%) fetches 5–8% premium
+2. **Sell in peak demand:** November–January (crushing season) sees better prices
+3. **Use e-NAM:** Register on enam.gov.in — bid from buyers across India, not just local traders
+4. **Check multiple APMCs:** Jalna and Aurangabad consistently 5–8% higher than Latur
+
+**Best strategy:** Check prices on agmarknet.gov.in the night before and choose the highest-priced APMC within transport distance.
+
+*Source: Agmarknet / NHB data*""",
+
+    "Grapes export procedure from Nashik?": """**Grapes Export Procedure from Nashik — Step-by-Step**
+
+**Nashik exports Thompson Seedless, Sharad, Manik Chaman to Europe, UAE, UK, SE Asia.**
+
+**Step 1 — Registration:**
+- Register as exporter with APEDA (apeda.gov.in) — mandatory
+- Get IEC (Import Export Code) from DGFT — apply online at dgft.gov.in
+- Register farm on APEDA's GrapeNet portal (tracenet.gov.in/grapenet)
+
+**Step 2 — Pre-harvest (October–January):**
+- Follow APEDA's Grape Export Residue Management Schedule (no banned pesticides)
+- Conduct soil and leaf tissue testing
+- Maintain spray diary (mandatory for EU export)
+- Apply for "registered grower" status with APEDA
+
+**Step 3 — Harvest & packing:**
+- Harvest at 16–18° Brix, firmness 250–300 g/cm²
+- Pack in 4.5 kg or 8 kg cartons with proper APEDA label
+- Pre-cooling to 0–2°C within 4 hours of harvest
+
+**Step 4 — Phytosanitary certificate:**
+- Apply to Plant Protection Quarantine & Storage, Nashik
+- MRL (Maximum Residue Limit) testing mandatory for EU/UK
+
+**Key contacts:**
+- APEDA Nashik: 0253-2507511
+- Mahagrapes (FPO): 020-25533117
+- NHB Nashik: 0253-2312550
+
+*Export season: January–March. Start registration by October.*""",
+
+    "How to get better price than mandi rate?": """**How to Get Better Price Than Mandi Rate — Maharashtra**
+
+**Strategies to beat the mandi (APMC) price:**
+
+💻 **1. e-NAM (National Agriculture Market)**
+- Register free at enam.gov.in — sell to buyers across India via online bidding
+- Often 5–15% higher than local APMC mandi rate
+- Available at 50+ APMCs in Maharashtra
+
+🏆 **2. Direct marketing / farmer's markets**
+- Shetkari Bazaar (Pune, Mumbai, Nashik) — sell directly to consumers
+- Farmers' Market at Pune, Aurangabad — vegetable/fruit growers get 2–3x retail price
+- SAFAL (Mother Dairy) collection centres for vegetables
+
+📦 **3. Grading and value addition**
+- Sorted/graded produce gets 20–40% premium
+- Simple cleaning, sizing, packaging raises perceived value
+- For onion: export-grade (55mm+) vs domestic grade
+
+🤝 **4. FPO / Cooperative selling**
+- Join Farmer Producer Organisation — collective bargaining power
+- Contact NABARD/NHB for FPO formation support
+- Maharashtra has 2,000+ FPOs; join nearest one
+
+🏪 **5. Direct contracts with retailers/processors**
+- Approach Big Bazaar, Reliance Fresh, D-Mart procurement teams
+- For cotton: direct tie-up with ginning mills
+- For soybean: contact crushing mills directly (Solvent Extractors Assn)
+
+**6. MSP route:** For notified crops, sell at MSP through NAFED/CCI/FCI when mandi price < MSP.
+
+*Always compare at least 3 options before selling.*""",
+
+    "Warehouse receipt loan for cotton farmers?": """**Warehouse Receipt Loan for Cotton Farmers — Maharashtra**
+
+**What is it?** Store your cotton in a WDRA-registered warehouse → get a receipt → pledge the receipt at any bank → get 70–80% of crop value as loan at 7–9% interest. Sell cotton later when prices rise.
+
+**How it works:**
+1. **Harvest cotton** and bring it to nearest accredited warehouse (CWC, SWC, or private)
+2. **Deposit:** Warehouse issues electronic Negotiable Warehouse Receipt (e-NWR)
+3. **Pledge at bank:** Take e-NWR to SBI, Bank of Maharashtra, or any commercial bank
+4. **Get loan:** 70–80% of market value; interest rate 7–9% p.a. (Kisan Credit Card eligible)
+5. **Sell when prices are good** → repay loan → collect balance
+
+**Registered warehouses in Maharashtra:**
+- CWC (Central Warehousing Corp) — Nagpur, Amravati, Aurangabad
+- MSSWC (Maharashtra State Warehousing Corp) — 200+ godowns statewide
+- Private WDRA-accredited warehouses in Vidarbha cotton belt
+
+**Benefits:**
+- Avoid distress sale at harvest-time low prices
+- Cotton safely stored; interest cost usually less than price gain
+- No middleman
+
+**Registration:** Visit wdra.nic.in or contact nearest bank branch with 7/12 extract + Aadhaar.
+
+**Interest subvention:** GoI provides 2% interest subvention on warehouse receipt loans up to ₹3 lakh.
+
+*Contact: Maharashtra State Warehousing Corp — 020-26058161*""",
+}
+
+# Marathi static answers for chips (mapped by English question)
+CHIP_STATIC_ANSWERS_MR = {
+    "काळ्या मातीत pH 7.8 साठी सर्वोत्तम पिक?": CHIP_STATIC_ANSWERS["Best crop for black cotton soil pH 7.8?"],
+    "विदर्भातील खरीप पेरणी दिनदर्शिका 2024?": CHIP_STATIC_ANSWERS["Kharif sowing calendar for Vidarbha 2024?"],
+    "सोयाबीनमधील नत्र कमतरता कशी दूर करावी?": CHIP_STATIC_ANSWERS["How to fix nitrogen deficiency in soybean?"],
+    "कापसाला प्रति हेक्टर खताचा डोस किती?": CHIP_STATIC_ANSWERS["Fertiliser dose for cotton per hectare?"],
+    "उसानंतर आंतरपीक पर्याय कोणते?": CHIP_STATIC_ANSWERS["Intercropping options after sugarcane?"],
+    "महाराष्ट्रात सेंद्रिय शेती प्रमाणपत्र कसे मिळवावे?": CHIP_STATIC_ANSWERS["Organic farming certification in Maharashtra?"],
+    "सोयाबीनची पाने पिवळी — काय चुकते आहे?": CHIP_STATIC_ANSWERS["Yellow leaves on soybean — what's wrong?"],
+    "कापसावर बोंड अळी — सेंद्रिय नियंत्रण?": CHIP_STATIC_ANSWERS["Bollworm attack on cotton — organic control?"],
+    "नाशिकमधील द्राक्षावर बुरशीनाशक वेळापत्रक?": CHIP_STATIC_ANSWERS["Fungicide spray schedule for grapes Nashik?"],
+    "लोह व जस्त कमतरतेची लक्षणे व उपाय?": CHIP_STATIC_ANSWERS["Iron & zinc deficiency symptoms & treatment?"],
+    "कांद्यासाठी टप्प्यानुसार ठिबक सिंचन वेळापत्रक?": CHIP_STATIC_ANSWERS["Drip irrigation schedule for onion per stage?"],
+    "द्राक्षावरील भुरी रोग कसा व्यवस्थापित करावा?": CHIP_STATIC_ANSWERS["How to manage powdery mildew on grapes?"],
+    "नाशिकमध्ये कांदा विकण्याची सर्वोत्तम वेळ 2025?": CHIP_STATIC_ANSWERS["Best time to sell onion in Nashik 2025?"],
+    "कापूस MSP 2024-25 विरुद्ध सध्याचा मंडी भाव?": CHIP_STATIC_ANSWERS["Cotton MSP 2024-25 vs current mandi rate?"],
+    "सोयाबीनला सर्वोत्तम भाव कोणत्या APMC मध्ये?": CHIP_STATIC_ANSWERS["Which APMC gives best price for soybean?"],
+    "नाशिकहून द्राक्ष निर्यात प्रक्रिया काय आहे?": CHIP_STATIC_ANSWERS["Grapes export procedure from Nashik?"],
+    "मंडी दरापेक्षा जास्त भाव कसा मिळवावा?": CHIP_STATIC_ANSWERS["How to get better price than mandi rate?"],
+    "कापूस शेतकऱ्यांसाठी गोदाम पावती कर्ज?": CHIP_STATIC_ANSWERS["Warehouse receipt loan for cotton farmers?"],
+}
+
+
 def finish_chip_qa(prefix, domain, context, data_context="", extra_knowledge=""):
-    """After widgets define context: run Gemini on pending chip and persist answer until cleared."""
+    """Show static built-in answer for the pending chip question (no AI call)."""
     pend = st.session_state.pop(f"{prefix}_pending", None)
     res_key = f"{prefix}_result"
     if pend:
-        expanded = expand_chip_question(pend, domain)
-        with st.spinner(t("chip_working")):
-            try:
-                ans = ask_gemini(
-                    expanded,
-                    context=context,
-                    data_context=data_context,
-                    extra_knowledge=extra_knowledge,
-                )
-            except Exception as ex:
-                ans = f"❌ {ex}"
+        # Look up static answer (try both English and Marathi maps)
+        ans = (
+            CHIP_STATIC_ANSWERS.get(pend)
+            or CHIP_STATIC_ANSWERS_MR.get(pend)
+            or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please use the AI chatbot tab for this question.'}"
+        )
         st.session_state[res_key] = {"q": pend, "a": ans}
     block = st.session_state.get(res_key)
     if block:
@@ -1418,7 +1900,7 @@ elif st.session_state.page == "growing":
     soil_display  = soil_names_mr if IS_MR else soil_names_en
 
     with tab1:
-        chip_row(get_chips("grow")[:5], "g_soil")
+        chip_row(get_chips("grow")[:5], "g_soil_chip")
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -1508,7 +1990,7 @@ elif st.session_state.page == "growing":
 
         _grow_ctx = f"Soil type: {soil_en}. pH: {ph}. District: {district}. Season: {season}. Water: {water}."
         finish_chip_qa(
-            "g_soil",
+            "g_soil_chip",
             "grow",
             "You specialise in crop planning and soil science for Maharashtra.",
             data_context=_grow_ctx,
@@ -1564,15 +2046,11 @@ elif st.session_state.page == "growing":
         chip_row(get_chips("grow")[3:], "g2_chip")
         _g2_pending = st.session_state.pop("g2_chip_pending", None)
         if _g2_pending:
-            with st.spinner(t("chip_working")):
-                try:
-                    _r = ask_gemini(
-                        expand_chip_question(_g2_pending, "grow"),
-                        context="You specialise in crop science and soil chemistry for Maharashtra.",
-                        extra_knowledge=CROP_VARIETY_REFERENCE,
-                    )
-                except Exception as _ex:
-                    _r = f"❌ {_ex}"
+            _r = (
+                CHIP_STATIC_ANSWERS.get(_g2_pending)
+                or CHIP_STATIC_ANSWERS_MR.get(_g2_pending)
+                or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please type your question below for AI response.'}"
+            )
             st.session_state.grow_msgs.append({"role": "user", "content": _g2_pending})
             st.session_state.grow_msgs.append({"role": "assistant", "content": _r})
         for msg in st.session_state.grow_msgs:
@@ -1715,14 +2193,11 @@ elif st.session_state.page == "maintaining":
         chip_row(get_chips("maintain")[4:], "m3_chip")
         _m3 = st.session_state.pop("m3_chip_pending", None)
         if _m3:
-            with st.spinner(t("chip_working")):
-                try:
-                    _rm = ask_gemini(
-                        expand_chip_question(_m3, "maintain"),
-                        context="You are a crop health expert for Maharashtra.",
-                    )
-                except Exception as _ex:
-                    _rm = f"❌ {_ex}"
+            _rm = (
+                CHIP_STATIC_ANSWERS.get(_m3)
+                or CHIP_STATIC_ANSWERS_MR.get(_m3)
+                or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please type your question below for AI response.'}"
+            )
             st.session_state.maintain_msgs.append({"role": "user", "content": _m3})
             st.session_state.maintain_msgs.append({"role": "assistant", "content": _rm})
         for msg in st.session_state.maintain_msgs:
@@ -2060,14 +2535,11 @@ elif st.session_state.page == "selling":
         chip_row(get_chips("sell")[4:], "s3_chip")
         _s4 = st.session_state.pop("s3_chip_pending", None)
         if _s4:
-            with st.spinner(t("chip_working")):
-                try:
-                    _rs = ask_gemini(
-                        expand_chip_question(_s4, "sell"),
-                        context="You are a commodity market expert for Maharashtra farmers.",
-                    )
-                except Exception as _ex:
-                    _rs = f"❌ {_ex}"
+            _rs = (
+                CHIP_STATIC_ANSWERS.get(_s4)
+                or CHIP_STATIC_ANSWERS_MR.get(_s4)
+                or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please type your question below for AI response.'}"
+            )
             st.session_state.sell_msgs.append({"role": "user", "content": _s4})
             st.session_state.sell_msgs.append({"role": "assistant", "content": _rs})
         for msg in st.session_state.sell_msgs:
