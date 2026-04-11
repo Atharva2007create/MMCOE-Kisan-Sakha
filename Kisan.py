@@ -16,11 +16,11 @@ import google.generativeai as genai
 import requests
 
 # Backend: GOOGLE_API_KEY only (create at https://aistudio.google.com/apikey).
-_ENV_GOOGLE_KEY = (os.environ.get("GOOGLE_API_KEY") or "").strip()
+_ENV_GOOGLE_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or "").strip()
 _GEMINI_MODEL = "gemini-2.5-flash"  # model id for the Generative AI API (not a second API key)
 
 # data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
-_ENV_DATA_GOV_KEY = (os.environ.get("DATA_GOV_IN_API_KEY") or "").strip()
+_ENV_DATA_GOV_KEY = (os.environ.get("AIzaSyC_3Yg-nMxyAorD2cuaKpA6fwKJd0F_PEo") or "").strip()
 
 # Google Maps Platform — Weather API (optional). Enable "Weather API" on your GCP project and billing.
 # Docs: https://developers.google.com/maps/documentation/weather/overview
