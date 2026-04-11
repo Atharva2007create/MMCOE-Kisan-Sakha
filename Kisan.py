@@ -14,7 +14,7 @@ import google.generativeai as genai
 import requests
 
 # Backend API key (optional): set GOOGLE_API_KEY or GEMINI_API_KEY in the environment.
-_ENV_GEMINI_KEY = (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
+_ENV_GEMINI_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or os.environ.get("GEMINI_API_KEY") or "").strip()
 _GEMINI_MODEL = "gemini-2.5-flash"
 
 # data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
