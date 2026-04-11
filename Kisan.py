@@ -1,6 +1,7 @@
 """
 MMCOE Kisan Sakha — deployment-ready Streamlit app.
 Set GOOGLE_API_KEY in the environment (from Google AI Studio). Optional: DATA_GOV_IN_API_KEY for live mandi merge.
+Optional: GOOGLE_WEATHER_API_KEY or GOOGLE_MAPS_API_KEY with Google Maps Platform Weather API enabled (live panel).
 Uses Gemini models via google-generativeai; RAG cache (24h); embedded baselines as fallback.
 """
 
@@ -15,11 +16,19 @@ import google.generativeai as genai
 import requests
 
 # Backend: GOOGLE_API_KEY only (create at https://aistudio.google.com/apikey).
-_ENV_GOOGLE_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or "").strip()
+_ENV_GOOGLE_KEY = (os.environ.get("GOOGLE_API_KEY") or "").strip()
 _GEMINI_MODEL = "gemini-2.5-flash"  # model id for the Generative AI API (not a second API key)
 
 # data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
 _ENV_DATA_GOV_KEY = (os.environ.get("DATA_GOV_IN_API_KEY") or "").strip()
+
+# Google Maps Platform — Weather API (optional). Enable "Weather API" on your GCP project and billing.
+# Docs: https://developers.google.com/maps/documentation/weather/overview
+_ENV_WEATHER_KEY = (
+    os.environ.get("GOOGLE_WEATHER_API_KEY")
+    or os.environ.get("GOOGLE_MAPS_API_KEY")
+    or ""
+).strip()
 
 _RAG_URLS = (
     "https://krishi.maharashtra.gov.in/",
@@ -47,6 +56,8 @@ DEFAULTS = {
     "maintain_msgs": [],
     "sell_msgs": [],
     "model": None,
+    "weather_open": False,
+    "weather_district": "Pune",
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -142,6 +153,18 @@ T = {
     "api_deploy_note":  {"English": "Deployment: configure `GOOGLE_API_KEY` in your host (Streamlit Cloud secrets, Docker env, or `.env`).", "मराठी": "डिप्लॉयमेंट: होस्टवर `GOOGLE_API_KEY` कॉन्फिगर करा."},
     "chip_working":     {"English": "Preparing a detailed answer…", "मराठी": "तपशीलवार उत्तर तयार होत आहे…"},
     "clear_chip_ans":   {"English": "Clear answer", "मराठी": "उत्तर साफ करा"},
+    "weather_toggle_on": {"English": "🌤 Live weather — tap to expand", "मराठी": "🌤 थेट हवामान — विस्तारासाठी दाबा"},
+    "weather_collapse": {"English": "▲ Collapse", "मराठी": "▲ बंद करा"},
+    "weather_head":     {"English": "Live weather", "मराठी": "थेट हवामान"},
+    "weather_sub":      {"English": "Powered by Google Weather API · Maharashtra location", "मराठी": "Google Weather API · महाराष्ट्र स्थान"},
+    "weather_district": {"English": "District (location)", "मराठी": "जिल्हा (स्थान)"},
+    "weather_refresh":  {"English": "Refresh data", "मराठी": "डेटा रिफ्रेश करा"},
+    "weather_no_key":   {"English": "Set **GOOGLE_WEATHER_API_KEY** or **GOOGLE_MAPS_API_KEY** in the environment with the Weather API enabled (Google Cloud Console) to load live forecasts.", "मराठी": "थेट अंदाजासाठी वातावरणात **GOOGLE_WEATHER_API_KEY** किंवा **GOOGLE_MAPS_API_KEY** सेट करा (Google Cloud Console मध्ये Weather API सुरू)."},
+    "weather_err":      {"English": "Could not load weather", "मराठी": "हवामान मिळाले नाही"},
+    "weather_hourly":   {"English": "Today — hourly", "मराठी": "आज — तासानुसार"},
+    "weather_daily":    {"English": "Daily outlook (up to 10 days)", "मराठी": "दैनिक अंदाज (१० दिवसांपर्यंत)"},
+    "weather_src":      {"English": "Source: Google Weather API", "मराठी": "स्रोत: Google Weather API"},
+    "sell_intro":       {"English": "Mandi prices, MSP charts, and AI advice below — use the chart toolbar to zoom and pan.", "मराठी": "खाली मंडी भाव, MSP आलेख व AI सल्ला — झूम व पॅनसाठी आलेखाची साधने वापरा."},
 }
 
 def t(key):
@@ -498,6 +521,107 @@ def load_data():
 
 price_df, soil_df, msp_df = load_data()
 
+# Approximate district centroids (Maharashtra) for Google Weather API lookups
+MH_DISTRICT_LATLON = {
+    "Ahmednagar": (19.0948, 74.7480),
+    "Akola": (20.7002, 77.0082),
+    "Amravati": (20.9374, 77.7796),
+    "Aurangabad": (19.8762, 75.3433),
+    "Beed": (18.9894, 75.7543),
+    "Bhandara": (21.1667, 79.6501),
+    "Buldhana": (20.5321, 76.1846),
+    "Chandrapur": (19.9615, 79.2961),
+    "Dhule": (20.9042, 74.7749),
+    "Gadchiroli": (20.1687, 79.9827),
+    "Gondia": (21.4529, 80.1920),
+    "Hingoli": (19.7202, 77.1465),
+    "Jalgaon": (21.0077, 75.5626),
+    "Jalna": (19.8410, 75.8864),
+    "Kolhapur": (16.7050, 74.2433),
+    "Latur": (18.4088, 76.5604),
+    "Mumbai": (19.0760, 72.8777),
+    "Nagpur": (21.1458, 79.0882),
+    "Nanded": (19.1383, 77.3210),
+    "Nandurbar": (21.3667, 74.2399),
+    "Nashik": (19.9975, 73.7898),
+    "Osmanabad": (18.1810, 76.0389),
+    "Palghar": (19.6967, 72.7654),
+    "Parbhani": (19.2611, 76.7767),
+    "Pune": (18.5204, 73.8567),
+    "Raigad": (18.5158, 73.1352),
+    "Ratnagiri": (16.9902, 73.3120),
+    "Sangli": (16.8524, 74.5815),
+    "Satara": (17.6805, 74.0183),
+    "Sindhudurg": (16.1683, 73.5806),
+    "Solapur": (17.6599, 75.9064),
+    "Thane": (19.2183, 72.9781),
+    "Wardha": (20.7453, 78.6022),
+    "Washim": (20.1110, 77.1313),
+    "Yavatmal": (20.3888, 78.1204),
+}
+
+
+def _latlon_for_district(name: str):
+    return MH_DISTRICT_LATLON.get(name, (19.7515, 75.7139))
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _google_weather_bundle(lat: float, lon: float, bump: int) -> dict:
+    """Current + 24h hourly + up to 10 daily from Google Weather API (requires API key)."""
+    if not _ENV_WEATHER_KEY:
+        return {"error": "no_key"}
+    base = "https://weather.googleapis.com/v1"
+    headers = {"User-Agent": "KisanSakha/1.0 (educational)"}
+    out = {"current": None, "hours": None, "days": None, "error": None}
+    try:
+        rc = requests.get(
+            f"{base}/currentConditions:lookup",
+            params={"key": _ENV_WEATHER_KEY, "location.latitude": lat, "location.longitude": lon},
+            timeout=22,
+            headers=headers,
+        )
+        if rc.status_code == 200:
+            out["current"] = rc.json()
+        else:
+            out["error"] = f"currentConditions {rc.status_code}: {rc.text[:280]}"
+    except Exception as ex:
+        out["error"] = str(ex)
+        return out
+    try:
+        rh = requests.get(
+            f"{base}/forecast/hours:lookup",
+            params={
+                "key": _ENV_WEATHER_KEY,
+                "location.latitude": lat,
+                "location.longitude": lon,
+                "hours": 24,
+            },
+            timeout=22,
+            headers=headers,
+        )
+        if rh.status_code == 200:
+            out["hours"] = rh.json()
+    except Exception:
+        pass
+    try:
+        rd = requests.get(
+            f"{base}/forecast/days:lookup",
+            params={
+                "key": _ENV_WEATHER_KEY,
+                "location.latitude": lat,
+                "location.longitude": lon,
+                "days": 10,
+            },
+            timeout=22,
+            headers=headers,
+        )
+        if rd.status_code == 200:
+            out["days"] = rd.json()
+    except Exception:
+        pass
+    return out
+
+
 # ══════════════════════════════════════════════════
 # PLOTLY THEME
 # ══════════════════════════════════════════════════
@@ -713,6 +837,55 @@ hr{border-color:var(--g5)!important;}
 /* ── Price range bar ── */
 .price-range-wrap{background:var(--g6);border-radius:10px;padding:.8rem 1rem;margin:.3rem 0;}
 .price-range-bar{height:8px;background:linear-gradient(90deg,var(--g4),var(--g2));border-radius:999px;margin:.3rem 0;}
+
+/* ── Weather strip (Google Weather) ── */
+.weather-strip-collapsed{
+  background:linear-gradient(135deg,#0d3d2a 0%,#1a5c40 45%,#2d6a4f 100%);
+  border-radius:14px;padding:.85rem 1.15rem;border:1px solid rgba(82,183,136,.38);
+  box-shadow:0 4px 22px rgba(13,43,26,.14);margin-bottom:.35rem;
+  transition:box-shadow .28s ease, transform .22s ease;
+}
+.weather-strip-collapsed:hover{box-shadow:0 10px 32px rgba(13,43,26,.2);transform:translateY(-1px);}
+.weather-strip-title{color:#fff!important;font-weight:600;font-size:1rem;margin:0!important;line-height:1.25;}
+.weather-strip-hint{color:rgba(216,243,220,.88)!important;font-size:.74rem;margin:.2rem 0 0!important;line-height:1.35;}
+.weather-panel-expanded{
+  background:linear-gradient(180deg,#ffffff 0%,#f2faf5 100%);
+  border:1px solid rgba(45,106,79,.22);border-radius:16px;padding:1rem 1.2rem 1.25rem;
+  box-shadow:0 10px 36px rgba(13,43,26,.1);
+  animation:fadeUp .45s cubic-bezier(.22,1,.36,1) both;
+  margin-bottom:.75rem;
+  transition:opacity .35s ease;
+}
+.weather-panel-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.65rem;}
+.weather-now-main{display:flex;flex-wrap:wrap;align-items:center;gap:1rem;margin:.5rem 0 1rem;}
+.weather-now-temp{font-size:2.1rem;font-weight:700;color:var(--g0);line-height:1;}
+.weather-now-meta{color:var(--muted);font-size:.88rem;max-width:28rem;line-height:1.45;}
+.weather-daily-row{display:flex;gap:.55rem;overflow-x:auto;padding:.4rem 0 .2rem;scrollbar-width:thin;}
+.weather-day-card{
+  flex:0 0 auto;min-width:104px;background:#fff;border:1px solid var(--g5);border-radius:12px;
+  padding:.55rem .5rem;text-align:center;box-shadow:0 2px 12px rgba(13,43,26,.06);
+}
+.weather-day-card .d1{font-weight:700;color:var(--g1);font-size:.78rem;}
+.weather-day-card .d2{font-size:.72rem;color:var(--muted);margin-top:.2rem;}
+.weather-day-card .d3{font-size:.85rem;color:var(--g0);margin-top:.35rem;font-weight:600;}
+
+/* ── Tab panels (market & other pages) — contrast on app background ── */
+.stTabs [data-baseweb="tab-panel"]{
+  color:#0d1f14!important;
+  background:linear-gradient(180deg,rgba(255,255,255,.95) 0%,rgba(242,247,244,.97) 100%)!important;
+  border-radius:0 14px 14px 14px!important;
+  border:1px solid rgba(45,106,79,.14)!important;
+  border-top:none!important;
+  padding:1rem 1.1rem 1.35rem!important;
+  margin-top:0!important;
+}
+.stTabs [data-baseweb="tab-panel"] p, .stTabs [data-baseweb="tab-panel"] li,
+.stTabs [data-baseweb="tab-panel"] .stMarkdown{color:#0d1f14!important;}
+.sell-page-intro{
+  background:#fff!important;border:1px solid rgba(45,106,79,.16)!important;border-radius:12px!important;
+  padding:.7rem 1rem!important;color:#0d1f14!important;font-size:.88rem!important;line-height:1.45!important;
+  margin:0 0 .85rem!important;box-shadow:0 2px 14px rgba(13,43,26,.06)!important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -942,9 +1115,234 @@ def crop_label(crop_en):
         return row.iloc[0]["Crop_MR"]
     return crop_en
 
+PLOTLY_INTERACTIVE = {
+    "scrollZoom": True,
+    "displayModeBar": True,
+    "displaylogo": False,
+    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+}
+
+
+def _sell_chart_layout(fig):
+    """Solid surfaces so charts stay readable on Streamlit light/dark themes."""
+    fig.update_layout(
+        paper_bgcolor="#f4faf7",
+        plot_bgcolor="#e8f2ec",
+        font=dict(family="Sora, sans-serif", size=12, color="#0d2b1a"),
+        title_font=dict(size=15, color="#1a4731"),
+        hovermode="x unified",
+    )
+    return fig
+
+
+def render_weather_panel():
+    """Top bar: expand for Google Weather (current, 24h hourly, 10-day daily)."""
+    if "weather_bump" not in st.session_state:
+        st.session_state.weather_bump = 0
+
+    if not st.session_state.weather_open:
+        st.markdown(
+            '<div class="weather-strip-collapsed">'
+            f'<p class="weather-strip-title">{t("weather_head")}</p>'
+            f'<p class="weather-strip-hint">{t("weather_sub")}</p></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            t("weather_toggle_on"),
+            key="wx_open",
+            use_container_width=True,
+        ):
+            st.session_state.weather_open = True
+            st.rerun()
+        return
+
+    st.markdown('<div class="weather-panel-expanded">', unsafe_allow_html=True)
+    h1, h2 = st.columns([4, 1])
+    with h1:
+        st.markdown(
+            f'<p class="weather-strip-title" style="color:#0d2b1a!important;">{t("weather_head")}</p>'
+            f'<p class="weather-strip-hint" style="color:#3d5a45!important;">{t("weather_sub")}</p>',
+            unsafe_allow_html=True,
+        )
+    with h2:
+        if st.button(t("weather_collapse"), key="wx_close", use_container_width=True):
+            st.session_state.weather_open = False
+            st.rerun()
+
+    dist_list = sorted(price_df["District"].dropna().unique())
+    if st.session_state.weather_district not in dist_list:
+        st.session_state.weather_district = dist_list[0] if dist_list else "Pune"
+
+    cwa, cwb, cwc = st.columns([2, 2, 1])
+    with cwa:
+        sel = st.selectbox(
+            t("weather_district"),
+            dist_list,
+            index=dist_list.index(st.session_state.weather_district),
+            key="wx_district_sel",
+        )
+        st.session_state.weather_district = sel
+    with cwb:
+        st.caption(t("weather_src"))
+    with cwc:
+        if st.button(t("weather_refresh"), key="wx_refresh"):
+            st.session_state.weather_bump += 1
+            st.rerun()
+
+    if not _ENV_WEATHER_KEY:
+        st.info(t("weather_no_key"))
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    lat, lon = _latlon_for_district(st.session_state.weather_district)
+    spin_msg = "हवामान लोड होत आहे…" if IS_MR else "Loading weather…"
+    with st.spinner(spin_msg):
+        bundle = _google_weather_bundle(lat, lon, int(st.session_state.weather_bump))
+
+    if bundle.get("error") == "no_key":
+        st.info(t("weather_no_key"))
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+    if bundle.get("error"):
+        st.warning(f'{t("weather_err")}: {bundle["error"]}')
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    cur = bundle.get("current") or {}
+    if not cur:
+        st.warning(t("weather_err"))
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    def _deg(obj):
+        if not obj or not isinstance(obj, dict):
+            return None
+        return obj.get("degrees")
+
+    temp = _deg(cur.get("temperature"))
+    feels = _deg(cur.get("feelsLikeTemperature"))
+    cond = (cur.get("weatherCondition") or {}).get("description") or {}
+    cond_txt = cond.get("text") or "—"
+    icon_uri = (cur.get("weatherCondition") or {}).get("iconBaseUri") or ""
+    hum = cur.get("relativeHumidity")
+    wind = (cur.get("wind") or {}).get("speed") or {}
+    wval = wind.get("value")
+    wunit = str(wind.get("unit") or "KILOMETERS_PER_HOUR").replace("_", " ").lower()
+    uv = cur.get("uvIndex")
+    precip = ((cur.get("precipitation") or {}).get("probability") or {}).get("percent")
+
+    st.markdown('<div class="weather-now-main">', unsafe_allow_html=True)
+    col_ic, col_tx = st.columns([1, 5])
+    with col_ic:
+        if icon_uri:
+            _iu = icon_uri if str(icon_uri).endswith((".svg", ".png")) else f"{icon_uri}.svg"
+            st.markdown(
+                f'<img src="{_iu}" width="72" height="72" alt="" '
+                'style="display:block;margin:0 auto;" onerror="this.style.display=\'none\'"/>',
+                unsafe_allow_html=True,
+            )
+    with col_tx:
+        unit = "°C"
+        tline = f"{temp:.1f}{unit}" if temp is not None else "—"
+        if feels is not None:
+            tline += f" · {'अनुभव' if IS_MR else 'feels'} {feels:.1f}{unit}"
+        st.markdown(f'<div class="weather-now-temp">{tline}</div>', unsafe_allow_html=True)
+        meta = f"**{cond_txt}**"
+        if hum is not None:
+            meta += f" · {'आर्द्रता' if IS_MR else 'Humidity'} {hum}%"
+        if wval is not None:
+            meta += f" · {'वारा' if IS_MR else 'Wind'} {wval} {wunit}"
+        if uv is not None:
+            meta += f" · UV {uv}"
+        if precip is not None:
+            meta += f" · {'पावसाची शक्यता' if IS_MR else 'Rain chance'} {precip}%"
+        st.markdown(f'<div class="weather-now-meta">{meta}</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    hrs = bundle.get("hours") or {}
+    fh = hrs.get("forecastHours") or []
+    if fh:
+        st.markdown(f"**{t('weather_hourly')}**")
+        rows = []
+        for h in fh:
+            iv = h.get("interval") or {}
+            st_t = iv.get("startTime", "")[:16].replace("T", " ")
+            ddt = h.get("displayDateTime") or {}
+            lbl = f"{ddt.get('hours', 0):02d}:00" if ddt else st_t
+            td = _deg(h.get("temperature"))
+            ct = ((h.get("weatherCondition") or {}).get("description") or {}).get("text") or ""
+            pr = ((h.get("precipitation") or {}).get("probability") or {}).get("percent")
+            rows.append({"Time": lbl, "°C": td, "Condition": ct, "Rain %": pr})
+        hdf = pd.DataFrame(rows)
+        hdf = hdf[hdf["°C"].notna()] if "°C" in hdf.columns else hdf
+        if not hdf.empty:
+            fig_h = go.Figure()
+            fig_h.add_trace(
+                go.Scatter(
+                    x=hdf["Time"],
+                    y=hdf["°C"],
+                    mode="lines+markers",
+                    name="°C",
+                    line=dict(color="#1a4731", width=2.5),
+                    marker=dict(size=7, color="#40916c"),
+                    hovertemplate="%{x}<br>%{y:.1f} °C<extra></extra>",
+                )
+            )
+            fig_h.update_layout(
+                title=None,
+                margin=dict(l=10, r=10, t=10, b=10),
+                height=280,
+                xaxis=dict(showgrid=False, title=""),
+                yaxis=dict(gridcolor="rgba(45,106,79,.2)", title="°C"),
+                paper_bgcolor="#f4faf7",
+                plot_bgcolor="#e8f2ec",
+                font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig_h, use_container_width=True, config=PLOTLY_INTERACTIVE)
+
+    days = bundle.get("days") or {}
+    fdays = days.get("forecastDays") or []
+    if fdays:
+        st.markdown(f"**{t('weather_daily')}**")
+        cards_html = ['<div class="weather-daily-row">']
+        for d in fdays:
+            dd = d.get("displayDate") or {}
+            date_lbl = f"{dd.get('day', '?')}/{dd.get('month', '?')}"
+            day_f = d.get("daytimeForecast") or {}
+            night_f = d.get("nighttimeForecast") or {}
+            max_t = _deg(d.get("maxTemperature")) or _deg(day_f.get("maxTemperature"))
+            min_t = _deg(d.get("minTemperature")) or _deg(night_f.get("minTemperature"))
+            wc = (
+                day_f.get("weatherCondition")
+                or night_f.get("weatherCondition")
+                or d.get("weatherCondition")
+                or {}
+            )
+            dtxt = (wc.get("description") or {}).get("text") or "—"
+            rng = ""
+            if max_t is not None and min_t is not None:
+                rng = f"{max_t:.0f}° / {min_t:.0f}°"
+            elif max_t is not None:
+                rng = f"↑{max_t:.0f}°"
+            elif min_t is not None:
+                rng = f"↓{min_t:.0f}°"
+            safe_txt = str(dtxt)[:32].replace("<", "")
+            cards_html.append(
+                f'<div class="weather-day-card"><div class="d1">{date_lbl}</div>'
+                f'<div class="d2">{safe_txt}</div><div class="d3">{rng}</div></div>'
+            )
+        cards_html.append("</div>")
+        st.markdown("".join(cards_html), unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 # ══════════════════════════════════════════════════
 # HOME
 # ══════════════════════════════════════════════════
+render_weather_panel()
+
 if st.session_state.page == "home":
     badge_txt = "महाराष्ट्रातील शेतकऱ्यांसाठी" if IS_MR else "Built for Maharashtra Farmers"
     st.markdown(f"""
@@ -1352,14 +1750,17 @@ elif st.session_state.page == "selling":
     back_btn()
     st.markdown(f'<p class="sec-hd fu">{t("sell_header")}</p>', unsafe_allow_html=True)
     st.markdown(f'<p class="sec-sub">{t("sell_subhd")}</p>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sell-page-intro">{t("sell_intro")}</div>', unsafe_allow_html=True)
 
-    tab1,tab2,tab3,tab4 = st.tabs([t("tab_price"),t("tab_msp"),t("tab_aimarket"),t("tab_sellchat")])
+    crops_avail = sorted(price_df["Crop"].unique())
+    crops_mr_avail = [price_df[price_df["Crop"] == c].iloc[0]["Crop_MR"] for c in crops_avail]
+    crop_disp = crops_mr_avail if IS_MR else crops_avail
+
+    tab1, tab2, tab3, tab4 = st.tabs(
+        [t("tab_price"), t("tab_msp"), t("tab_aimarket"), t("tab_sellchat")]
+    )
 
     with tab1:
-        crops_avail = sorted(price_df["Crop"].unique())
-        crops_mr_avail = [price_df[price_df["Crop"]==c].iloc[0]["Crop_MR"] for c in crops_avail]
-        crop_disp = crops_mr_avail if IS_MR else crops_avail
-
         c_f1,c_f2,c_f3 = st.columns(3)
         with c_f1:
             crop_sel_d = st.selectbox(t("crop_lbl"), crop_disp, key="s_crop")
@@ -1403,7 +1804,10 @@ elif st.session_state.page == "selling":
                 chart_filt, "Market", ["Min_Price","Modal_Price","Max_Price"], lbl_map,
                 title=f"{'APMC भाव तुलना' if IS_MR else 'APMC Price Comparison'} — {crop_sel_d} (₹/qtl)"
             )
-            st.plotly_chart(fig_price, use_container_width=True)
+            for tr in fig_price.data:
+                tr.hovertemplate = "<b>%{x}</b><br>%{fullData.name}: ₹%{y:,.0f}/qtl<extra></extra>"
+            _sell_chart_layout(fig_price)
+            st.plotly_chart(fig_price, use_container_width=True, config=PLOTLY_INTERACTIVE)
 
             # Arrival bubble chart (sanitized dtypes for Plotly Express)
             try:
@@ -1428,16 +1832,20 @@ elif st.session_state.page == "selling":
                         color_discrete_sequence=GREEN_PALETTE,
                     )
                     fig_arr.update_layout(
-                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                        font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
-                        margin=dict(l=10, r=10, t=45, b=10), height=340,
+                        margin=dict(l=10, r=10, t=45, b=10), height=360,
                         xaxis=dict(showgrid=False, tickangle=-35),
-                        yaxis=dict(gridcolor="rgba(210,240,220,.5)"),
+                        yaxis=dict(gridcolor="rgba(45,106,79,.2)", title="₹/qtl"),
                     )
+                    fig_arr.update_traces(
+                        marker=dict(line=dict(width=0.6, color="#fff"), opacity=0.9),
+                        hovertemplate="<b>%{fullData.name}</b><br>Market: %{x}<br>₹%{y}/qtl<br>Size ∝ arrival<extra></extra>",
+                    )
+                    _sell_chart_layout(fig_arr)
             except Exception as _sc_ex:
                 st.caption(f"Scatter chart skipped: {_sc_ex}" if not IS_MR else f"स्कॅटर आलेख: {_sc_ex}")
                 fig_arr = go.Figure()
-            st.plotly_chart(fig_arr, use_container_width=True)
+            if fig_arr.data:
+                st.plotly_chart(fig_arr, use_container_width=True, config=PLOTLY_INTERACTIVE)
 
             # Table
             lbl = "मराठी नाव" if IS_MR else "Crop"
@@ -1520,16 +1928,19 @@ elif st.session_state.page == "selling":
                 text_auto=".0f",
             )
             fig_msp.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
                 xaxis=dict(showgrid=False, tickangle=-40),
-                yaxis=dict(gridcolor="rgba(210,240,220,.5)", title="₹/quintal"),
-                margin=dict(l=10, r=10, t=45, b=10), height=370,
+                yaxis=dict(gridcolor="rgba(45,106,79,.2)", title="₹/quintal"),
+                margin=dict(l=10, r=10, t=45, b=10), height=400,
+            )
+            _sell_chart_layout(fig_msp)
+            fig_msp.update_traces(
+                hovertemplate="<b>%{x}</b><br>%{fullData.name}: ₹%{y:,.0f}/qtl<extra></extra>"
             )
         except Exception as _msp_ex:
             st.warning(f"MSP chart: {_msp_ex}" if not IS_MR else f"MSP आलेख: {_msp_ex}")
             fig_msp = go.Figure()
-        st.plotly_chart(fig_msp, use_container_width=True)
+        if fig_msp.data:
+            st.plotly_chart(fig_msp, use_container_width=True, config=PLOTLY_INTERACTIVE)
 
         # Hike % chart
         try:
@@ -1546,17 +1957,22 @@ elif st.session_state.page == "selling":
                 text_auto=".1f",
             )
             fig_hike.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
                 xaxis=dict(showgrid=False, tickangle=-40),
-                yaxis=dict(gridcolor="rgba(210,240,220,.5)", title="%"),
-                margin=dict(l=10, r=10, t=45, b=10), height=320,
+                yaxis=dict(gridcolor="rgba(45,106,79,.2)", title="%"),
+                margin=dict(l=10, r=10, t=45, b=10), height=340,
                 coloraxis_showscale=False,
+            )
+            _sell_chart_layout(fig_hike)
+            fig_hike.update_traces(
+                hovertemplate="<b>%{x}</b><br>"
+                + ("वाढ %{y:.1f}%" if IS_MR else "Hike %{y:.1f}%")
+                + "<extra></extra>"
             )
         except Exception as _h_ex:
             st.warning(f"Hike chart: {_h_ex}" if not IS_MR else f"वाढ आलेख: {_h_ex}")
             fig_hike = go.Figure()
-        st.plotly_chart(fig_hike, use_container_width=True)
+        if fig_hike.data:
+            st.plotly_chart(fig_hike, use_container_width=True, config=PLOTLY_INTERACTIVE)
 
         # Table
         rename_msp = {
