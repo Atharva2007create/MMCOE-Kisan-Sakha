@@ -12,7 +12,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import google.generativeai as genaiv
+import google.generativeai as genai
 import requests
 
 # Backend: GOOGLE_API_KEY only (create at https://aistudio.google.com/apikey).
@@ -20,15 +20,10 @@ _ENV_GOOGLE_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or 
 _GEMINI_MODEL = "gemini-2.5-flash"  # model id for the Generative AI API (not a second API key)
 
 # data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
-_ENV_DATA_GOV_KEY = (os.environ.get("AIzaSyC_3Yg-nMxyAorD2cuaKpA6fwKJd0F_PEo") or "").strip()
+_ENV_DATA_GOV_KEY = (os.environ.get("DATA_GOV_IN_API_KEY") or "").strip()
 
-# Google Maps Platform — Weather API (optional). Enable "Weather API" on your GCP project and billing.
-# Docs: https://developers.google.com/maps/documentation/weather/overview
-_ENV_WEATHER_KEY = (
-    os.environ.get("GOOGLE_WEATHER_API_KEY")
-    or os.environ.get("GOOGLE_MAPS_API_KEY")
-    or ""
-).strip()
+# Weather is now powered via Gemini RAG — no separate Weather API key needed.
+# The same GOOGLE_API_KEY used for AI answers also powers the weather panel.
 
 _RAG_URLS = (
     "https://krishi.maharashtra.gov.in/",
@@ -248,93 +243,376 @@ For each district agro-climatic zone (Vidarbha, Marathwada, Western MH, North MH
 PRICE_CSV = """Crop,Crop_MR,District,Market,Min_Price,Modal_Price,Max_Price,Season,Arrival_MT
 Onion,कांदा,Nashik,Lasalgaon,800,1100,1400,Kharif,12500
 Onion,कांदा,Nashik,Pimpalgaon,750,1050,1350,Kharif,9800
+Onion,कांदा,Nashik,Niphad,820,1080,1380,Kharif,7600
+Onion,कांदा,Nashik,Satana,780,1020,1320,Kharif,5200
+Onion,कांदा,Nashik,Malegaon,760,1000,1300,Kharif,4800
 Onion,कांदा,Pune,Pune,900,1250,1600,Kharif,7200
+Onion,कांदा,Pune,Junnar,870,1180,1520,Kharif,4100
 Onion,कांदा,Solapur,Solapur,700,980,1250,Kharif,5400
+Onion,कांदा,Solapur,Barshi,720,1000,1280,Kharif,3800
 Onion,कांदा,Ahmednagar,Rahuri,820,1120,1450,Kharif,4300
+Onion,कांदा,Ahmednagar,Shrirampur,800,1100,1420,Kharif,3600
+Onion,कांदा,Dhule,Dhule,750,1020,1310,Kharif,3200
+Onion,कांदा,Jalgaon,Jalgaon,760,1030,1320,Kharif,2900
+Onion,कांदा,Aurangabad,Aurangabad,810,1080,1380,Kharif,3100
+Onion,कांदा,Jalna,Jalna,790,1060,1360,Kharif,2700
 Onion,कांदा,Nashik,Lasalgaon,1200,1850,2400,Rabi,18000
 Onion,कांदा,Nashik,Pimpalgaon,1100,1720,2200,Rabi,14200
+Onion,कांदा,Nashik,Niphad,1150,1780,2300,Rabi,11500
+Onion,कांदा,Nashik,Satana,1080,1700,2200,Rabi,8900
+Onion,कांदा,Nashik,Malegaon,1060,1680,2180,Rabi,7600
 Onion,कांदा,Pune,Pune,1300,1950,2600,Rabi,9800
+Onion,कांदा,Pune,Junnar,1250,1900,2500,Rabi,6200
 Onion,कांदा,Solapur,Solapur,1000,1580,2100,Rabi,6500
+Onion,कांदा,Solapur,Barshi,1020,1600,2120,Rabi,4800
 Onion,कांदा,Ahmednagar,Rahuri,1150,1750,2350,Rabi,7100
+Onion,कांदा,Ahmednagar,Shrirampur,1120,1720,2300,Rabi,5500
+Onion,कांदा,Dhule,Dhule,1050,1650,2200,Rabi,4600
+Onion,कांदा,Jalgaon,Jalgaon,1070,1670,2220,Rabi,4100
+Onion,कांदा,Aurangabad,Aurangabad,1100,1700,2280,Rabi,4400
+Onion,कांदा,Jalna,Jalna,1080,1680,2250,Rabi,3900
+Onion,कांदा,Latur,Latur,980,1550,2080,Rabi,5200
+Onion,कांदा,Nanded,Nanded,1000,1580,2100,Rabi,4300
+Onion,कांदा,Osmanabad,Osmanabad,960,1530,2060,Rabi,3700
+Onion,कांदा,Kolhapur,Kolhapur,1050,1620,2180,Rabi,3500
+Onion,कांदा,Satara,Satara,1020,1600,2150,Rabi,3200
+Onion,कांदा,Sangli,Sangli,1030,1610,2160,Rabi,2900
 Cotton,कापूस,Nagpur,Nagpur,6000,6400,6800,Kharif,8200
+Cotton,कापूस,Nagpur,Kamptee,5950,6350,6750,Kharif,5100
 Cotton,कापूस,Amravati,Amravati,5800,6200,6600,Kharif,11500
+Cotton,कापूस,Amravati,Daryapur,5750,6150,6550,Kharif,7800
+Cotton,कापूस,Amravati,Achalpur,5780,6180,6580,Kharif,6200
+Onion,कांदा,Washim,Washim,920,1420,1900,Rabi,2600
 Cotton,कापूस,Yavatmal,Yavatmal,5900,6300,6700,Kharif,13200
+Cotton,कापूस,Yavatmal,Wani,5850,6250,6650,Kharif,9800
+Cotton,कापूस,Yavatmal,Pusad,5820,6220,6620,Kharif,7500
 Cotton,कापूस,Wardha,Wardha,6100,6500,6900,Kharif,7800
+Cotton,कापूस,Wardha,Hinganghat,6150,6550,6950,Kharif,9200
 Cotton,कापूस,Akola,Akola,5750,6150,6550,Kharif,9600
+Cotton,कापूस,Akola,Balapur,5700,6100,6500,Kharif,6800
 Cotton,कापूस,Buldhana,Khamgaon,5900,6250,6600,Kharif,8100
+Cotton,कापूस,Buldhana,Malkapur,5850,6200,6550,Kharif,6200
+Cotton,कापूस,Washim,Washim,5800,6200,6600,Kharif,5400
+Cotton,कापूस,Washim,Risod,5780,6180,6580,Kharif,4200
+Cotton,कापूस,Hingoli,Hingoli,5820,6220,6620,Kharif,4800
+Cotton,कापूस,Nanded,Nanded,5850,6250,6650,Kharif,5200
+Cotton,कापूस,Osmanabad,Osmanabad,5780,6180,6580,Kharif,3900
+Cotton,कापूस,Latur,Latur,5800,6200,6600,Kharif,4300
+Cotton,कापूस,Aurangabad,Aurangabad,5900,6300,6700,Kharif,4100
+Cotton,कापूस,Jalna,Jalna,5850,6250,6650,Kharif,3800
+Cotton,कापूस,Beed,Beed,5820,6220,6620,Kharif,4600
+Cotton,कापूस,Parbhani,Parbhani,5840,6240,6640,Kharif,5100
+Cotton,कापूस,Dhule,Dhule,5750,6150,6550,Kharif,3200
+Cotton,कापूस,Jalgaon,Jalgaon,5780,6180,6580,Kharif,3600
 Soybean,सोयाबीन,Latur,Latur,3800,4200,4600,Kharif,14000
+Soybean,सोयाबीन,Latur,Udgir,3780,4180,4580,Kharif,8200
 Soybean,सोयाबीन,Osmanabad,Osmanabad,3700,4100,4500,Kharif,9300
+Soybean,सोयाबीन,Osmanabad,Tuljapur,3720,4120,4520,Kharif,5800
 Soybean,सोयाबीन,Nanded,Nanded,3750,4150,4550,Kharif,8700
+Soybean,सोयाबीन,Nanded,Deglur,3730,4130,4530,Kharif,5400
 Soybean,सोयाबीन,Jalna,Jalna,3900,4300,4700,Kharif,7200
 Soybean,सोयाबीन,Aurangabad,Aurangabad,4000,4400,4800,Kharif,6100
+Soybean,सोयाबीन,Beed,Beed,3850,4250,4650,Kharif,7800
+Soybean,सोयाबीन,Parbhani,Parbhani,3820,4220,4620,Kharif,6900
+Soybean,सोयाबीन,Hingoli,Hingoli,3800,4200,4600,Kharif,5600
+Soybean,सोयाबीन,Washim,Washim,3780,4180,4580,Kharif,4900
+Soybean,सोयाबीन,Akola,Akola,3850,4250,4650,Kharif,5200
+Soybean,सोयाबीन,Amravati,Amravati,3870,4270,4670,Kharif,6100
+Soybean,सोयाबीन,Yavatmal,Yavatmal,3860,4260,4660,Kharif,5800
+Soybean,सोयाबीन,Nagpur,Nagpur,3900,4300,4700,Kharif,4200
+Soybean,सोयाबीन,Ahmednagar,Ahmednagar,3950,4350,4750,Kharif,3900
+Soybean,सोयाबीन,Pune,Pune,4000,4400,4800,Kharif,3600
+Soybean,सोयाबीन,Solapur,Solapur,3780,4180,4580,Kharif,5100
 Tur Dal,तूर डाळ,Latur,Latur,5500,6800,7500,Kharif,4200
+Tur Dal,तूर डाळ,Latur,Udgir,5400,6700,7400,Kharif,3100
 Tur Dal,तूर डाळ,Osmanabad,Osmanabad,5300,6600,7300,Kharif,3800
+Tur Dal,तूर डाळ,Osmanabad,Tuljapur,5250,6550,7250,Kharif,2600
 Tur Dal,तूर डाळ,Nanded,Nanded,5400,6700,7400,Kharif,2900
+Tur Dal,तूर डाळ,Nanded,Deglur,5350,6650,7350,Kharif,2100
 Tur Dal,तूर डाळ,Solapur,Solapur,5600,6900,7600,Kharif,3100
+Tur Dal,तूर डाळ,Solapur,Barshi,5550,6850,7550,Kharif,2400
 Tur Dal,तूर डाळ,Akola,Akola,5200,6400,7100,Kharif,2500
-Wheat,गहू,Pune,Pune,2100,2350,2600,Rabi,9200
-Wheat,गहू,Nashik,Nashik,2050,2300,2550,Rabi,8100
-Wheat,गहू,Solapur,Solapur,2000,2250,2500,Rabi,7400
-Wheat,गहू,Aurangabad,Aurangabad,2080,2320,2570,Rabi,6800
-Wheat,गहू,Nagpur,Nagpur,2150,2400,2650,Rabi,5500
+Tur Dal,तूर डाळ,Aurangabad,Aurangabad,5450,6750,7450,Kharif,2800
+Tur Dal,तूर डाळ,Jalna,Jalna,5400,6700,7400,Kharif,2200
+Tur Dal,तूर डाळ,Beed,Beed,5380,6680,7380,Kharif,2100
+Tur Dal,तूर डाळ,Amravati,Amravati,5300,6600,7300,Kharif,1900
+Tur Dal,तूर डाळ,Nagpur,Nagpur,5450,6750,7450,Kharif,2300
+Tur Dal,तूर डाళ,Yavatmal,Yavatmal,5350,6650,7350,Kharif,2000
+Tur Dal,తూర్ డాళ్,Parbhani,Parbhani,5320,6620,7320,Kharif,1800
+Wheat,గహు,Pune,Pune,2100,2350,2600,Rabi,9200
+Wheat,గహు,Pune,Baramati,2080,2330,2580,Rabi,6800
+Wheat,గహు,Nashik,Nashik,2050,2300,2550,Rabi,8100
+Wheat,గహు,Nashik,Yeola,2030,2280,2530,Rabi,5600
+Wheat,గహు,Solapur,Solapur,2000,2250,2500,Rabi,7400
+Wheat,గహు,Solapur,Barshi,1980,2230,2480,Rabi,5100
+Wheat,గహు,Aurangabad,Aurangabad,2080,2320,2570,Rabi,6800
+Wheat,గహు,Aurangabad,Paithan,2060,2300,2550,Rabi,4500
+Wheat,గహు,Nagpur,Nagpur,2150,2400,2650,Rabi,5500
+Wheat,గహు,Nagpur,Kamptee,2130,2380,2630,Rabi,3800
+Wheat,గహు,Latur,Latur,2020,2270,2520,Rabi,6200
+Wheat,గహు,Nanded,Nanded,2010,2260,2510,Rabi,5400
+Wheat,గహు,Jalgaon,Jalgaon,2090,2340,2590,Rabi,7200
+Wheat,గహు,Dhule,Dhule,2070,2320,2570,Rabi,6100
+Wheat,గహు,Ahmednagar,Ahmednagar,2060,2310,2560,Rabi,5800
+Wheat,గహు,Amravati,Amravati,2120,2370,2620,Rabi,4900
+Wheat,గహు,Akola,Akola,2100,2350,2600,Rabi,4600
+Wheat,గహు,Beed,Beed,2000,2250,2500,Rabi,4200
+Wheat,గహు,Osmanabad,Osmanabad,1990,2240,2490,Rabi,3900
+Wheat,గహు,Kolhapur,Kolhapur,2050,2300,2550,Rabi,3600
+Wheat,గహు,Satara,Satara,2030,2280,2530,Rabi,3400
+Wheat,గహు,Sangli,Sangli,2040,2290,2540,Rabi,3200
+Wheat,గహు,Wardha,Wardha,2110,2360,2610,Rabi,3800
+Wheat,గహు,Yavatmal,Yavatmal,2080,2330,2580,Rabi,3500
+Wheat,గహు,Washim,Washim,2070,2320,2570,Rabi,2900
+Wheat,గహు,Hingoli,Hingoli,2030,2280,2530,Rabi,2700
+Wheat,గహు,Parbhani,Parbhani,2040,2290,2540,Rabi,3100
+Wheat,గహు,Jalna,Jalna,2060,2310,2560,Rabi,3300
 Sugarcane,ऊस,Kolhapur,Kolhapur,3400,3650,3900,Annual,25000
+Sugarcane,ऊस,Kolhapur,Ichalkaranji,3380,3630,3880,Annual,18500
 Sugarcane,ऊस,Satara,Satara,3300,3550,3800,Annual,21000
+Sugarcane,ऊस,Satara,Karad,3280,3530,3780,Annual,15200
 Sugarcane,ऊस,Sangli,Sangli,3350,3600,3850,Annual,18500
+Sugarcane,ऊस,Sangli,Miraj,3330,3580,3830,Annual,14200
 Sugarcane,ऊस,Pune,Pune,3200,3450,3700,Annual,15000
+Sugarcane,ऊस,Pune,Baramati,3250,3500,3750,Annual,12000
 Sugarcane,ऊस,Solapur,Solapur,3100,3350,3600,Annual,12000
+Sugarcane,ऊस,Solapur,Akkalkot,3080,3330,3580,Annual,8500
+Sugarcane,ऊस,Ahmednagar,Ahmednagar,3150,3400,3650,Annual,11000
+Sugarcane,ऊस,Nashik,Nashik,3200,3450,3700,Annual,9500
+Sugarcane,ऊस,Aurangabad,Aurangabad,3050,3300,3550,Annual,7800
+Sugarcane,ऊस,Latur,Latur,3000,3250,3500,Annual,6500
+Sugarcane,ऊस,Nanded,Nanded,3020,3270,3520,Annual,5800
 Groundnut,भुईमूग,Solapur,Solapur,4500,5200,5900,Kharif,5800
+Groundnut,भुईमूग,Solapur,Barshi,4450,5150,5850,Kharif,4100
 Groundnut,भुईमूग,Latur,Latur,4400,5100,5800,Kharif,4200
 Groundnut,भुईमूग,Osmanabad,Osmanabad,4300,5000,5700,Kharif,3600
 Groundnut,भुईमूग,Ahmednagar,Ahmednagar,4600,5300,6000,Kharif,4900
+Groundnut,भुईमूग,Ahmednagar,Rahuri,4550,5250,5950,Kharif,3800
+Groundnut,भुईमूग,Pune,Pune,4700,5400,6100,Kharif,3500
+Groundnut,భుईమూగ్,Nashik,Nashik,4650,5350,6050,Kharif,3200
+Groundnut,భుఇమూగ్,Aurangabad,Aurangabad,4400,5100,5800,Kharif,2900
+Groundnut,భుఇమూగ్,Jalna,Jalna,4380,5080,5780,Kharif,2600
+Groundnut,భుఇమూగ్,Nagpur,Nagpur,4500,5200,5900,Kharif,2400
+Groundnut,భుఇమూగ్,Amravati,Amravati,4420,5120,5820,Kharif,2700
 Jowar,ज्वारी,Solapur,Solapur,2200,2550,2900,Rabi,6200
+Jowar,ज्वारी,Solapur,Barshi,2150,2500,2850,Rabi,4500
 Jowar,ज्वारी,Latur,Latur,2100,2450,2800,Rabi,5100
 Jowar,ज्वारी,Osmanabad,Osmanabad,2050,2400,2750,Rabi,4300
+Jowar,ज्वारी,Aurangabad,Aurangabad,2200,2550,2900,Rabi,3800
+Jowar,ज्वारी,Nanded,Nanded,2120,2470,2820,Rabi,3600
+Jowar,ज्वारी,Pune,Pune,2250,2600,2950,Rabi,3200
+Jowar,ज्वारी,Nashik,Nashik,2180,2530,2880,Rabi,2900
+Jowar,ज्वारी,Beed,Beed,2100,2450,2800,Rabi,2700
+Jowar,ज्वारी,Kolhapur,Kolhapur,2050,2400,2750,Rabi,2200
+Jowar,ज्वारी,Sangli,Sangli,2080,2430,2780,Rabi,2100
+Jowar,ज्वारी,Satara,Satara,2060,2410,2760,Rabi,2000
+Jowar,ज्वारी,Jalna,Jalna,2090,2440,2790,Rabi,2400
+Jowar,ज्वारी,Ahmednagar,Ahmednagar,2200,2550,2900,Kharif,5800
+Jowar,ज्वारी,Nagpur,Nagpur,2150,2500,2850,Kharif,4200
 Bajra,बाजरी,Nashik,Nashik,1900,2200,2500,Kharif,4800
+Bajra,बाजरी,Nashik,Nandurbar,1870,2170,2470,Kharif,3600
 Bajra,बाजरी,Ahmednagar,Ahmednagar,1850,2150,2450,Kharif,3900
+Bajra,बाजरी,Pune,Pune,1920,2220,2520,Kharif,3200
+Bajra,बाजरी,Solapur,Solapur,1830,2130,2430,Kharif,2900
+Bajra,बाजरी,Aurangabad,Aurangabad,1880,2180,2480,Kharif,2600
+Bajra,बाजरी,Jalgaon,Jalgaon,1890,2190,2490,Kharif,2800
+Bajra,बाजरी,Dhule,Dhule,1860,2160,2460,Kharif,2500
+Bajra,बाजरी,Jalna,Jalna,1840,2140,2440,Kharif,2200
+Bajra,बाजरी,Beed,Beed,1820,2120,2420,Kharif,2000
+Bajra,बाजरी,Osmanabad,Osmanabad,1810,2110,2410,Kharif,1900
+Bajra,बाजरी,Nanded,Nanded,1830,2130,2430,Kharif,2100
+Bajra,बाजरी,Nagpur,Nagpur,1900,2200,2500,Kharif,1800
 Tomato,टोमॅटो,Nashik,Lasalgaon,600,950,1600,Kharif,8500
+Tomato,टोमॅटो,Nashik,Pimpalgaon,580,920,1580,Kharif,6200
+Tomato,टोमॅटो,Nashik,Niphad,560,900,1550,Kharif,5100
 Tomato,टोमॅटो,Pune,Pune,700,1100,1800,Kharif,6200
+Tomato,टोमॅटो,Pune,Junnar,650,1050,1750,Kharif,4800
+Tomato,टोमॅटो,Ahmednagar,Ahmednagar,680,1080,1780,Kharif,4200
+Tomato,टोमॅटो,Solapur,Solapur,620,980,1620,Kharif,3800
+Tomato,टोमॅटो,Aurangabad,Aurangabad,650,1020,1680,Kharif,3500
+Tomato,टोमॅटो,Nagpur,Nagpur,700,1120,1800,Kharif,3100
+Tomato,टोमॅटो,Latur,Latur,630,1000,1650,Kharif,2900
+Tomato,टोमॅटो,Kolhapur,Kolhapur,720,1150,1850,Kharif,2700
+Tomato,टोमॅटो,Satara,Satara,700,1100,1800,Kharif,2500
+Tomato,टोमॅटो,Nashik,Lasalgaon,800,1200,2000,Rabi,9800
+Tomato,टोमॅटो,Pune,Pune,900,1400,2200,Rabi,7500
 Grapes,द्राक्षे,Nashik,Nashik,3000,4500,6500,Annual,15000
+Grapes,द्राक्षे,Nashik,Niphad,2900,4400,6400,Annual,11500
+Grapes,द्राक्षे,Nashik,Dindori,2800,4300,6200,Annual,9800
+Grapes,द्राक्षे,Nashik,Malegaon,2700,4100,6000,Annual,7200
 Grapes,द्राक्षे,Sangli,Sangli,2800,4200,6200,Annual,9800
+Grapes,द्राक्षे,Sangli,Tasgaon,2750,4100,6100,Annual,7500
+Grapes,द्राक्षे,Pune,Pune,3100,4700,6800,Annual,5200
+Grapes,द्राक्षे,Solapur,Solapur,2600,3900,5800,Annual,3800
+Grapes,द्राक्षे,Ahmednagar,Ahmednagar,2700,4000,5900,Annual,4200
 Pomegranate,डाळिंब,Solapur,Solapur,4000,5800,7500,Annual,7200
+Pomegranate,डाळिंब,Solapur,Barshi,3900,5700,7400,Annual,5400
 Pomegranate,डाळिंब,Sangli,Sangli,3800,5500,7200,Annual,5400
+Pomegranate,डाळिंब,Nashik,Nashik,4100,5900,7700,Annual,6200
+Pomegranate,डाळिंब,Ahmednagar,Ahmednagar,4050,5850,7650,Annual,5800
+Pomegranate,डाळिंब,Pune,Pune,4200,6000,7800,Annual,4900
+Pomegranate,डाळिंब,Latur,Latur,3750,5400,7050,Annual,3600
+Pomegranate,डाळिंब,Osmanabad,Osmanabad,3700,5350,7000,Annual,3200
+Pomegranate,डाळिंब,Aurangabad,Aurangabad,3900,5600,7300,Annual,4100
 Chickpea,हरभरा,Latur,Latur,4800,5200,5700,Rabi,8900
+Chickpea,हरभरा,Latur,Udgir,4750,5150,5650,Rabi,6200
 Chickpea,हरभरा,Osmanabad,Osmanabad,4700,5100,5600,Rabi,7200
 Chickpea,हरभरा,Nanded,Nanded,4750,5150,5650,Rabi,6100
+Chickpea,हरभरा,Solapur,Solapur,4820,5220,5720,Rabi,7800
+Chickpea,हरभरा,Aurangabad,Aurangabad,4780,5180,5680,Rabi,5800
+Chickpea,हरभरा,Jalna,Jalna,4760,5160,5660,Rabi,5200
+Chickpea,हरभरा,Beed,Beed,4740,5140,5640,Rabi,4900
+Chickpea,हरभरा,Ahmednagar,Ahmednagar,4800,5200,5700,Rabi,5500
+Chickpea,हरभरा,Pune,Pune,4850,5250,5750,Rabi,4800
+Chickpea,हरभरा,Nashik,Nashik,4830,5230,5730,Rabi,4500
+Chickpea,हरभरा,Akola,Akola,4710,5110,5610,Rabi,4200
+Chickpea,हरभरा,Amravati,Amravati,4720,5120,5620,Rabi,4000
+Chickpea,हरभरा,Nagpur,Nagpur,4780,5180,5680,Rabi,3800
+Chickpea,हरभरा,Wardha,Wardha,4760,5160,5660,Rabi,3600
+Chickpea,हरभरा,Yavatmal,Yavatmal,4730,5130,5630,Rabi,3400
 Rice,तांदूळ,Raigad,Pen,1800,2100,2400,Kharif,11000
+Rice,तांदूळ,Raigad,Alibag,1820,2120,2420,Kharif,8500
 Rice,तांदूळ,Ratnagiri,Ratnagiri,1900,2200,2500,Kharif,8500
+Tur Dal,तूर डाळ,Buldhana,Khamgaon,5280,6580,7280,Kharif,1700
+Rice,तांदूळ,Ratnagiri,Chiplun,1880,2180,2480,Kharif,6800
 Rice,तांदूळ,Sindhudurg,Kudal,1850,2150,2450,Kharif,6200
+Rice,तांदूळ,Sindhudurg,Sawantwadi,1830,2130,2430,Kharif,5100
 Rice,तांदूळ,Thane,Bhiwandi,1750,2050,2350,Kharif,7800
+Rice,तांदूळ,Thane,Shahapur,1730,2030,2330,Kharif,6200
 Rice,तांदूळ,Palghar,Dahanu,1780,2080,2380,Kharif,5400
+Rice,तांदूळ,Palghar,Vasai,1760,2060,2360,Kharif,4900
 Rice,तांदूळ,Chandrapur,Chandrapur,1600,1950,2300,Kharif,9200
+Rice,तांदूळ,Chandrapur,Ballarpur,1580,1930,2280,Kharif,7100
 Rice,तांदूळ,Gadchiroli,Gadchiroli,1550,1880,2200,Kharif,4800
+Rice,तांदूळ,Gadchiroli,Sironcha,1530,1860,2180,Kharif,3900
 Rice,तांदूळ,Gondia,Gondia,1680,2000,2320,Kharif,7600
+Rice,तांदूळ,Gondia,Tirora,1660,1980,2300,Kharif,5800
 Rice,तांदूळ,Bhandara,Bhandara,1650,1980,2280,Kharif,6900
+Rice,तांदूळ,Bhandara,Tumsar,1630,1960,2260,Kharif,5400
 Rice,तांदूळ,Dhule,Dhule,1720,2040,2360,Kharif,7100
 Rice,तांदूळ,Jalgaon,Jalgaon,1700,2020,2340,Kharif,8800
 Rice,तांदूळ,Nandurbar,Nandurbar,1680,1990,2280,Kharif,5500
+Rice,तांदूळ,Nandurbar,Shahada,1660,1970,2260,Kharif,4500
 Rice,तांदूळ,Hingoli,Hingoli,1620,1940,2240,Kharif,4100
 Rice,तांदूळ,Parbhani,Parbhani,1640,1960,2260,Kharif,5200
 Rice,तांदूळ,Beed,Beed,1660,1980,2280,Kharif,4700
 Rice,तांदूळ,Washim,Washim,1630,1950,2250,Kharif,3900
 Maize,मका,Pune,Pune,1600,1880,2150,Kharif,6200
+Maize,मका,Pune,Baramati,1580,1860,2130,Kharif,4800
 Maize,मका,Nashik,Nashik,1580,1850,2120,Kharif,5800
+Maize,मका,Nashik,Nandurbar,1560,1830,2100,Kharif,4500
 Maize,मका,Dhule,Dhule,1550,1820,2080,Kharif,4900
 Maize,मका,Jalna,Jalna,1570,1840,2100,Kharif,4400
+Maize,मका,Aurangabad,Aurangabad,1590,1860,2130,Kharif,4100
+Maize,मका,Latur,Latur,1560,1830,2100,Kharif,3800
+Maize,मका,Solapur,Solapur,1540,1810,2080,Kharif,3600
+Maize,मका,Nagpur,Nagpur,1600,1880,2150,Kharif,3400
+Maize,मका,Amravati,Amravati,1610,1890,2160,Kharif,3200
+Maize,मका,Kolhapur,Kolhapur,1650,1930,2200,Kharif,3000
+Maize,मका,Satara,Satara,1630,1910,2180,Kharif,2800
 Sunflower,सूर्यफूल,Latur,Latur,5200,5600,6000,Kharif,3200
 Sunflower,सूर्यफूल,Osmanabad,Osmanabad,5100,5500,5900,Kharif,2800
+Sunflower,सूर्यफूल,Solapur,Solapur,5250,5650,6050,Kharif,3500
+Sunflower,सूर्यफूल,Ahmednagar,Ahmednagar,5300,5700,6100,Kharif,2900
+Sunflower,सूर्यफूल,Nashik,Nashik,5200,5600,6000,Kharif,2500
+Sunflower,सूर्यफूल,Aurangabad,Aurangabad,5180,5580,5980,Kharif,2300
 Sesame,तीळ,Parbhani,Parbhani,8200,8800,9400,Kharif,2100
+Sesame,तीळ,Nanded,Nanded,8100,8700,9300,Kharif,1800
+Sesame,तीळ,Latur,Latur,8150,8750,9350,Kharif,1600
+Sesame,तीळ,Osmanabad,Osmanabad,8050,8650,9250,Kharif,1500
+Sesame,तीळ,Aurangabad,Aurangabad,8200,8800,9400,Kharif,1400
 Moong,मूग,Latur,Latur,7800,8200,8600,Kharif,2600
+Moong,मूग,Osmanabad,Osmanabad,7750,8150,8550,Kharif,2100
+Moong,मूग,Nanded,Nanded,7780,8180,8580,Kharif,1900
+Moong,मूग,Aurangabad,Aurangabad,7820,8220,8620,Kharif,1700
+Moong,मूग,Solapur,Solapur,7800,8200,8600,Rabi,1500
+Moong,मूग,Nashik,Nashik,7850,8250,8650,Kharif,1400
+Moong,मूग,Pune,Pune,7900,8300,8700,Kharif,1300
 Urad,उडीद,Osmanabad,Osmanabad,6800,7200,7600,Kharif,2200
+Urad,उडीद,Latur,Latur,6820,7220,7620,Kharif,1900
+Urad,उडीद,Nanded,Nanded,6800,7200,7600,Kharif,1700
+Urad,उडीद,Aurangabad,Aurangabad,6850,7250,7650,Kharif,1500
+Urad,उडीद,Solapur,Solapur,6780,7180,7580,Kharif,1400
 Banana,केळी,Jalgaon,Jalgaon,800,1200,1800,Kharif,45000
+Banana,केळी,Jalgaon,Raver,780,1180,1780,Kharif,38000
+Banana,केळी,Jalgaon,Yawal,760,1160,1760,Kharif,32000
 Banana,केळी,Solapur,Solapur,750,1100,1650,Kharif,28000
+Banana,केळी,Pune,Pune,850,1250,1900,Kharif,22000
+Banana,केळी,Nashik,Nashik,820,1220,1850,Kharif,18000
+Banana,केळी,Kolhapur,Kolhapur,900,1300,1950,Kharif,15000
+Banana,केळी,Satara,Satara,870,1270,1920,Kharif,12000
+Banana,केळी,Sangli,Sangli,860,1260,1900,Kharif,11000
+Banana,केळी,Nagpur,Nagpur,820,1220,1850,Kharif,9500
+Banana,केळी,Amravati,Amravati,800,1200,1820,Kharif,8200
 Turmeric,हळद,Sangli,Sangli,9000,10500,12000,Kharif,8500
+Turmeric,हळद,Sangli,Tasgaon,8900,10400,11900,Kharif,6800
 Turmeric,हळद,Chandrapur,Chandrapur,8800,10200,11500,Kharif,6200
+Turmeric,हळद,Solapur,Solapur,9100,10600,12100,Kharif,5500
+Turmeric,हळद,Nanded,Nanded,8950,10450,11950,Kharif,4800
+Turmeric,हळद,Aurangabad,Aurangabad,9050,10550,12050,Kharif,4200
+Turmeric,हळद,Latur,Latur,8900,10400,11900,Kharif,3900
+Turmeric,हळद,Nashik,Nashik,9200,10700,12200,Kharif,3600
 Chili,मिरची,Nashik,Nashik,12000,14500,17000,Kharif,4200
+Chili,मिरची,Nashik,Pimpalgaon,11800,14300,16800,Kharif,3600
 Chili,मिरची,Ahmednagar,Ahmednagar,11500,13800,16200,Kharif,3800
+Chili,मिरची,Pune,Pune,12500,15000,17500,Kharif,3200
+Chili,मिरची,Aurangabad,Aurangabad,11800,14200,16700,Kharif,2900
+Chili,मिरची,Latur,Latur,11600,14000,16500,Kharif,2700
+Chili,मिरची,Solapur,Solapur,11400,13800,16300,Kharif,2500
+Chili,मिरची,Nagpur,Nagpur,12200,14700,17200,Kharif,2200
 Potato,बटाटा,Pune,Pune,900,1250,1600,Rabi,15000
+Potato,बटाटा,Pune,Baramati,880,1230,1580,Rabi,11500
 Potato,बटाटा,Nashik,Nashik,880,1220,1580,Rabi,12000
+Potato,बटाटा,Ahmednagar,Ahmednagar,870,1210,1570,Rabi,9800
+Potato,बटाटा,Kolhapur,Kolhapur,920,1280,1640,Rabi,8500
+Potato,बटाटा,Satara,Satara,900,1250,1600,Rabi,7200
+Potato,बटाटा,Nagpur,Nagpur,950,1300,1650,Rabi,6500
+Potato,बटाटा,Aurangabad,Aurangabad,890,1240,1590,Rabi,5800
+Potato,बटाटा,Solapur,Solapur,860,1210,1560,Rabi,5500
+Potato,बटाटा,Latur,Latur,850,1200,1550,Rabi,5000
 Cabbage,कोबी,Pune,Pune,400,650,950,Kharif,9000
+Cabbage,कोबी,Nashik,Nashik,380,620,920,Kharif,7200
+Cabbage,कोबी,Satara,Satara,420,680,980,Kharif,5800
+Cabbage,कोबी,Kolhapur,Kolhapur,430,690,990,Kharif,5100
+Cabbage,कोबी,Nagpur,Nagpur,450,720,1020,Kharif,4500
 Cauliflower,फुलकोबी,Pune,Pune,500,800,1100,Kharif,7500
+Cauliflower,फुलकोबी,Nashik,Nashik,480,780,1080,Kharif,6200
+Cauliflower,फुलकोबी,Satara,Satara,520,820,1120,Kharif,5000
+Cauliflower,फुलकोबी,Nagpur,Nagpur,540,840,1140,Kharif,4200
+Lentil,मसूर,Latur,Latur,5800,6200,6600,Rabi,3200
+Lentil,मसूर,Osmanabad,Osmanabad,5750,6150,6550,Rabi,2800
+Lentil,मसूर,Nanded,Nanded,5780,6180,6580,Rabi,2500
+Lentil,मसूर,Solapur,Solapur,5820,6220,6620,Rabi,2900
+Lentil,मसूर,Aurangabad,Aurangabad,5800,6200,6600,Rabi,2400
+Mustard,मोहरी,Nashik,Nashik,5200,5500,5800,Rabi,2100
+Mustard,मोहरी,Pune,Pune,5250,5550,5850,Rabi,1900
+Mustard,मोहरी,Ahmednagar,Ahmednagar,5180,5480,5780,Rabi,1800
+Barley,जव,Nashik,Nashik,1600,1800,2000,Rabi,2800
+Barley,जव,Pune,Pune,1620,1820,2020,Rabi,2400
+Barley,जव,Aurangabad,Aurangabad,1580,1780,1980,Rabi,2200
+Mango,आंबा,Ratnagiri,Ratnagiri,5000,8000,12000,Annual,18500
+Mango,आंबा,Sindhudurg,Kudal,4800,7800,11800,Annual,14200
+Mango,आंबा,Raigad,Alibag,4600,7500,11500,Annual,12000
+Mango,आंबा,Nashik,Nashik,3000,5000,8000,Annual,9500
+Mango,आंबा,Pune,Pune,3200,5200,8200,Annual,8800
+Mango,आंबा,Aurangabad,Aurangabad,2800,4800,7800,Annual,7200
+Mango,आंबा,Nagpur,Nagpur,3000,5000,8000,Annual,6500
+Cashew,काजू,Ratnagiri,Ratnagiri,8000,10000,12500,Annual,5800
+Cashew,काजू,Sindhudurg,Kudal,7800,9800,12200,Annual,4900
+Cashew,काजू,Raigad,Alibag,7500,9500,12000,Annual,4200
+Coconut,नारळ,Ratnagiri,Ratnagiri,1800,2200,2800,Annual,8500
+Coconut,नारळ,Sindhudurg,Kudal,1750,2150,2750,Annual,7200
+Coconut,नारळ,Raigad,Alibag,1700,2100,2700,Annual,6500
+Coconut,नारळ,Thane,Bhiwandi,1650,2050,2650,Annual,5800
+Ginger,आले,Sangli,Sangli,4500,6500,9000,Kharif,3200
+Ginger,आले,Satara,Satara,4300,6300,8800,Kharif,2800
+Ginger,आले,Kolhapur,Kolhapur,4600,6600,9100,Kharif,2500
+Garlic,लसूण,Nashik,Nashik,8000,12000,16000,Rabi,5500
+Garlic,लसूण,Pune,Pune,8500,12500,16500,Rabi,4800
+Garlic,लसूण,Ahmednagar,Ahmednagar,8200,12200,16200,Rabi,4200
+Garlic,लसूण,Solapur,Solapur,7800,11800,15800,Rabi,3800
+Garlic,लसूण,Satara,Satara,8100,12100,16100,Rabi,3500
+Garlic,लसूण,Aurangabad,Aurangabad,8000,12000,16000,Rabi,3200
 """
 
 SOIL_CSV = """Soil_Type,Soil_MR,Region,pH_Min,pH_Max,pH_Optimal,OC_pct,N_kg_ha,P_kg_ha,K_kg_ha,CEC,Fe_ppm,Zn_ppm,Texture,WHC,Drainage,Primary_Crops,Secondary_Crops,Deficiencies,Amendment
@@ -565,61 +843,50 @@ def _latlon_for_district(name: str):
     return MH_DISTRICT_LATLON.get(name, (19.7515, 75.7139))
 
 
-@st.cache_data(ttl=900, show_spinner=False)
-def _google_weather_bundle(lat: float, lon: float, bump: int) -> dict:
-    """Current + 24h hourly + up to 10 daily from Google Weather API (requires API key)."""
-    if not _ENV_WEATHER_KEY:
+@st.cache_data(ttl=1800, show_spinner=False)
+def _gemini_weather_rag(district: str, bump: int) -> dict:
+    """
+    Fetch weather for a Maharashtra district using Gemini + live RAG web search.
+    Returns a structured dict with current conditions and a 5-day outlook.
+    Uses only the GOOGLE_API_KEY — no separate Weather API key required.
+    """
+    if not _ENV_GOOGLE_KEY:
         return {"error": "no_key"}
-    base = "https://weather.googleapis.com/v1"
-    headers = {"User-Agent": "KisanSakha/1.0 (educational)"}
-    out = {"current": None, "hours": None, "days": None, "error": None}
     try:
-        rc = requests.get(
-            f"{base}/currentConditions:lookup",
-            params={"key": _ENV_WEATHER_KEY, "location.latitude": lat, "location.longitude": lon},
-            timeout=22,
-            headers=headers,
+        _model = genai.GenerativeModel(_GEMINI_MODEL)
+    except Exception:
+        return {"error": "model_init_failed"}
+
+    prompt = (
+        f"You are a weather assistant. Provide current weather conditions and a 5-day forecast "
+        f"for {district} district, Maharashtra, India. "
+        f"Search online for the latest weather data for {district}, Maharashtra right now. "
+        f"Respond ONLY with a JSON object (no markdown, no backticks) with exactly this structure:\n"
+        '{"temperature_c": <number>, "feels_like_c": <number>, "condition": "<short description>", '
+        '"humidity_pct": <number>, "wind_kmh": <number>, "rain_chance_pct": <number>, '
+        '"uv_index": <number>, '
+        '"forecast": ['
+        '{"day": "<Mon/Tue/etc>", "date": "<DD/MM>", "max_c": <number>, "min_c": <number>, '
+        '"condition": "<short description>", "rain_chance_pct": <number>}, '
+        '... 5 days total'
+        '], '
+        '"farming_advisory": "<1-2 sentence farming tip for current weather>"}'
+        f"\nUse real current data for {district}, Maharashtra. All numbers must be realistic for Maharashtra climate."
+    )
+    try:
+        resp = _model.generate_content(
+            prompt,
+            request_options={"timeout": 30},
         )
-        if rc.status_code == 200:
-            out["current"] = rc.json()
-        else:
-            out["error"] = f"currentConditions {rc.status_code}: {rc.text[:280]}"
+        raw = (resp.text or "").strip()
+        # strip markdown fences if present
+        raw = re.sub(r"^```[a-z]*\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        import json
+        data = json.loads(raw)
+        return {"data": data, "error": None}
     except Exception as ex:
-        out["error"] = str(ex)
-        return out
-    try:
-        rh = requests.get(
-            f"{base}/forecast/hours:lookup",
-            params={
-                "key": _ENV_WEATHER_KEY,
-                "location.latitude": lat,
-                "location.longitude": lon,
-                "hours": 24,
-            },
-            timeout=22,
-            headers=headers,
-        )
-        if rh.status_code == 200:
-            out["hours"] = rh.json()
-    except Exception:
-        pass
-    try:
-        rd = requests.get(
-            f"{base}/forecast/days:lookup",
-            params={
-                "key": _ENV_WEATHER_KEY,
-                "location.latitude": lat,
-                "location.longitude": lon,
-                "days": 10,
-            },
-            timeout=22,
-            headers=headers,
-        )
-        if rd.status_code == 200:
-            out["days"] = rd.json()
-    except Exception:
-        pass
-    return out
+        return {"error": str(ex)}
 
 
 # ══════════════════════════════════════════════════
@@ -848,10 +1115,6 @@ hr{border-color:var(--g5)!important;}
 .weather-strip-collapsed:hover{box-shadow:0 10px 32px rgba(13,43,26,.2);transform:translateY(-1px);}
 .weather-strip-title{color:#fff!important;font-weight:600;font-size:1rem;margin:0!important;line-height:1.25;}
 .weather-strip-hint{color:rgba(216,243,220,.88)!important;font-size:.74rem;margin:.2rem 0 0!important;line-height:1.35;}
-.weather-panel-expanded .weather-strip-title{color:#0d2b1a!important;}
-.weather-panel-expanded .weather-strip-hint{color:#3d5a45!important;}
-.weather-panel-expanded{color:#0d2b1a!important;}
-.weather-panel-expanded p,.weather-panel-expanded div,.weather-panel-expanded span,.weather-panel-expanded strong,.weather-panel-expanded .weather-now-temp,.weather-panel-expanded .weather-now-meta{color:#0d2b1a!important;}
 .weather-panel-expanded{
   background:linear-gradient(180deg,#ffffff 0%,#f2faf5 100%);
   border:1px solid rgba(45,106,79,.22);border-radius:16px;padding:1rem 1.2rem 1.25rem;
@@ -1064,500 +1327,22 @@ def chip_row(chips_list, prefix):
                 st.session_state[f"{prefix}_pending"] = chip
 
 
-CHIP_STATIC_ANSWERS = {
-    # GROW chips
-    "Best crop for black cotton soil pH 7.8?": """**Best Crops for Black Cotton Soil at pH 7.8**
-
-Black cotton soil (Vertisol) at pH 7.8 is slightly alkaline and very fertile — ideal for many Maharashtra crops.
-
-**Top recommended crops:**
-- 🌿 **Cotton** — the classic choice; thrives in black soil with good moisture retention. Use Bt hybrids (Bunny, NHH-44) or desi varieties (PKV Rajat).
-- 🟡 **Soybean** — excellent cash crop; varieties JS-335, MAUS-71, Phule Kimaya. Fixes nitrogen naturally.
-- 🌾 **Wheat (Rabi)** — Lok-1, GW-496 perform well. Requires 3–4 irrigations.
-- 🫘 **Tur Dal (Arhar)** — BDN-711, BDN-716. Drought tolerant, good for Vidarbha/Marathwada.
-- 🧅 **Onion** — Bhima Kiran, Bhima Shakti. Needs well-drained raised beds.
-- 🌻 **Sunflower** — KBSH-44, Phule Raviraj for summer season.
-
-**pH 7.8 management tip:** Add gypsum (250 kg/ha) or organic matter (FYM 10 t/ha) to slightly lower pH and improve soil structure. Zinc deficiency is common — apply ZnSO₄ @ 25 kg/ha basal dose.
-
-*Verify with your local KVK or Agriculture Department before sowing.*""",
-
-    "Kharif sowing calendar for Vidarbha 2024?": """**Kharif Sowing Calendar — Vidarbha, Maharashtra**
-
-| Crop | Sowing Window | Seed Rate | Spacing |
-|------|--------------|-----------|---------|
-| Cotton (Bt hybrid) | 1–20 June | 450g/ha | 90×60 cm |
-| Soybean | 15 June – 10 July | 75 kg/ha | 45×5 cm |
-| Tur Dal | 15 June – 5 July | 15–18 kg/ha | 90×30 cm |
-| Maize | 15 June – 15 July | 20 kg/ha | 60×20 cm |
-| Moong | 1–20 July | 20–25 kg/ha | 30×10 cm |
-| Jowar (Kharif) | 15 June – 15 July | 10 kg/ha | 45×15 cm |
-| Groundnut | 10–30 June | 100 kg/ha | 30×10 cm |
-
-**Monsoon onset in Vidarbha:** Typically 10–15 June. Sow within 7 days of good pre-monsoon rain (≥50 mm).
-
-**Key tips:**
-- Treat seeds with Thiram + Carbendazim (2+1 g/kg) before sowing
-- Apply soil test-based fertiliser at sowing
-- Use broad-based furrows (BBF) for excess water drainage in low-lying fields
-
-*Source: PDKV Akola / VNMKV Parbhani recommendations*""",
-
-    "How to fix nitrogen deficiency in soybean?": """**Fixing Nitrogen Deficiency in Soybean**
-
-**Symptoms:** Yellowing of older (lower) leaves starting from leaf tips, stunted growth, pale green plants.
-
-**Why it happens:** Poor nodulation due to soil acidity, waterlogging, or lack of Rhizobium bacteria.
-
-**Correction steps:**
-1. **Seed treatment (preventive):** Treat seeds with Rhizobium japonicum culture @ 250 g/10 kg seed before sowing. This is the most cost-effective fix.
-2. **Basal dose:** Apply DAP 100 kg/ha (46% P) at sowing — phosphorus helps root development and nodulation.
-3. **Foliar spray (curative):** Spray 2% urea (20 g/litre water) at 25–30 days after sowing. Repeat after 10 days if needed.
-4. **Top dressing:** Apply urea 50 kg/ha if nodulation has completely failed (check roots — healthy nodules are pink inside).
-
-**Important:** Do NOT over-apply nitrogen to soybean — it suppresses natural nitrogen fixation. If Rhizobium nodulation is good, no extra N is needed after initial 20 kg N/ha starter dose.
-
-**Check soil pH:** If pH < 6.5, apply lime (agricultural limestone) @ 2–3 t/ha to improve nodulation.
-
-*Verify with KVK Latur / Osmanabad / Nanded for local recommendations.*""",
-
-    "Fertiliser dose for cotton per hectare?": """**Fertiliser Dose for Cotton (per hectare) — Maharashtra**
-
-**For Bt Hybrid Cotton on Black Soil:**
-
-| Nutrient | Recommended Dose | Source |
-|---------|-----------------|--------|
-| Nitrogen (N) | 120 kg/ha | Urea @ 261 kg/ha |
-| Phosphorus (P₂O₅) | 60 kg/ha | DAP or SSP |
-| Potassium (K₂O) | 60 kg/ha | MOP @ 100 kg/ha |
-| Zinc (ZnSO₄) | 25 kg/ha | Basal (if deficient) |
-
-**Application schedule:**
-- **Basal (at sowing):** Full P + K + 25% N (30 kg N/ha) + ZnSO₄
-- **Top dressing 1 (30–35 DAS):** 50% N (60 kg N/ha) — during vegetative stage
-- **Top dressing 2 (60–65 DAS):** 25% N (30 kg N/ha) — before flowering
-
-**Foliar supplements:**
-- Boron (Borax 0.2%) spray at bud formation stage
-- Magnesium sulphate (MgSO₄) 1% at flowering if Mg deficiency observed
-
-**FYM/Organic:** Apply FYM 10–15 t/ha as pre-sowing — reduces need for chemical fertiliser by 25%.
-
-*Source: PKV Akola / Maharashtra Agriculture Department*""",
-
-    "Intercropping options after sugarcane?": """**Intercropping Options with/After Sugarcane — Maharashtra**
-
-**During sugarcane ratoon / in interrows (plant crop):**
-- 🫘 **Soybean** — most popular; 2 rows between cane rows. Harvest in 90–100 days. Fixes N for cane.
-- 🟤 **Groundnut** — Kharif; fits well in wider cane spacing (90 cm+).
-- 🌿 **Moong / Urad** — short duration (60–75 days); very compatible with young sugarcane.
-- 🧅 **Onion (Rabi)** — highly profitable intercrop in sugarcane planted September–October.
-- 🥬 **Leafy vegetables** — coriander, fenugreek in initial 2–3 months.
-
-**After sugarcane harvest (sequence cropping):**
-- **Wheat** (Rabi) — excellent; soil enriched by cane trash, high yield.
-- **Chickpea (Rabi)** — drought-tolerant, minimal input.
-- **Sunflower** — summer crop; good market in Kolhapur/Sangli.
-- **Soybean** (next Kharif) — breaks pest cycle from cane.
-
-**Economics:** Soybean intercrop in sugarcane typically gives additional ₹15,000–25,000/ha income without reducing cane yield significantly.
-
-*Recommended by Vasantdada Sugar Institute (VSI), Pune*""",
-
-    "Organic farming certification in Maharashtra?": """**Organic Farming Certification in Maharashtra**
-
-**Steps to get certified:**
-
-1. **Choose a certifying agency** — APEDA-accredited bodies operating in Maharashtra:
-   - ISCOP (Indocert), IMO Control, OneCert, Ecocert India, Lacon Quality Certification
-
-2. **Conversion period:** Your farm must be managed organically for **3 years** before getting full certification. During this period you can get "in-conversion" certificate.
-
-3. **Documents needed:**
-   - Land records (7/12 extract)
-   - Land history of past 3 years
-   - Farm map / sketch
-   - Input purchase records (no chemical purchases)
-   - Crop diary / field log
-
-4. **Government schemes:**
-   - **Paramparagat Krishi Vikas Yojana (PKVY)** — ₹50,000/ha over 3 years, group of 50 farmers minimum
-   - **Maharashtra Organic Farming Mission** — contact District Agriculture Office
-   - **PGS-India** (Participatory Guarantee System) — low-cost group certification for small farmers
-
-5. **Market linkage:** Register on **India Organic** portal (apeda.gov.in) for export. Local: Pune Organic Farmers Market, Mahaorganic outlets.
-
-**Cost:** Individual certification ₹8,000–15,000/year. Group (PGS) much cheaper.
-
-*Contact: Maharashtra State Agriculture Dept, Pune — 020-26050075*""",
-
-    # MAINTAIN chips
-    "Yellow leaves on soybean — what's wrong?": """**Yellow Leaves on Soybean — Diagnosis Guide**
-
-**Possible causes (check each):**
-
-🟡 **1. Nitrogen deficiency (most common)**
-- Lower/older leaves turn yellow first
-- Fix: Foliar spray 2% urea; ensure Rhizobium seed treatment was done
-
-🟡 **2. Yellow Mosaic Virus (YMV)**
-- Scattered yellow patches on leaves, mosaic pattern
-- Spread by whitefly; no cure — uproot affected plants
-- Prevention: Imidacloprid seed treatment 5 ml/kg; plant early
-
-🟡 **3. Iron deficiency**
-- Young (top) leaves turn yellow, veins stay green (interveinal chlorosis)
-- Fix: Spray FeSO₄ 0.5% + citric acid 0.1% twice at 7-day interval
-
-🟡 **4. Waterlogging**
-- All leaves yellowing, roots blackened
-- Fix: Improve drainage immediately; make BBF ridges
-
-🟡 **5. Rhizoctonia root rot**
-- Yellowing + brown lesions on stem near soil
-- Fix: Drench with Carbendazim 0.1% near roots
-
-**Quick check:** Pull a plant and examine roots — pink/red nodules = good nitrogen fixation. No nodules = apply Rhizobium + 2% urea spray.
-
-*Confirm with KVK agronomist if disease suspected.*""",
-
-    "Bollworm attack on cotton — organic control?": """**Bollworm Attack on Cotton — Organic & IPM Control**
-
-**Types of bollworms in Maharashtra cotton:**
-- Pink bollworm (Pectinophora gossypiella) — most damaging
-- American bollworm (Helicoverpa armigera)
-- Spotted bollworm (Earias spp.)
-
-**Organic / IPM control measures:**
-
-🌿 **Cultural:**
-- Deep summer ploughing (May) — destroys pupae in soil
-- Destroy crop stubble after harvest immediately
-- Avoid late sowing (after 20 June) — reduces pest pressure
-
-🪤 **Pheromone traps:**
-- Install Helilure/Pectilure traps @ 5/ha from 45 DAS
-- Monitor weekly; >8 moths/trap/week = spray threshold
-
-🦠 **Biological sprays:**
-- **Bt (Bacillus thuringiensis)** spray 1 kg/ha at first instar larvae — very effective
-- **NPV (Nuclear Polyhedrosis Virus)** for Helicoverpa: 250 LE/ha
-- **Neem oil** 5% or Azadirachtin 1500 ppm @ 5 ml/litre — repellent + anti-feedant
-
-🌱 **Botanical:**
-- Spray neem seed kernel extract (NSKE) 5% at flowering
-- Profenofos + Cypermethrin (permitted in IPM) as last resort
-
-**Economic threshold:** Spray when 5–10% bolls show damage or 1–2 larvae/plant.
-
-*Source: CICR Nagpur / PKV Akola IPM guidelines*""",
-
-    "Fungicide spray schedule for grapes Nashik?": """**Fungicide Spray Schedule for Grapes — Nashik Region**
-
-**Key diseases in Nashik grapes:**
-- Downy Mildew (Plasmopara viticola) — most critical
-- Powdery Mildew (Uncinula necator)
-- Botrytis (bunch rot) — near harvest
-
-**Spray schedule (Kharif / pre-harvest pruning cycle):**
-
-| Stage | Disease | Fungicide | Dose/100L |
-|-------|---------|-----------|-----------|
-| Bud burst (0–7 days) | Downy mildew | Bordeaux mixture 0.5% | — |
-| 2-leaf stage | Downy + Powdery | Mancozeb 75% WP | 250 g |
-| 4-leaf stage | Downy mildew | Metalaxyl-M + Mancozeb | 200 g |
-| Flowering | Powdery mildew | Hexaconazole 5% EC | 20 ml |
-| Berry set | Both | Fosetyl-Al (Aliette) | 250 g |
-| Berry development | Downy mildew | Cymoxanil + Mancozeb | 300 g |
-| Pre-harvest (30 days) | Botrytis | Carbendazim 50% WP | 100 g |
-
-**Key rules:**
-- Alternate fungicide groups to prevent resistance
-- Spray in early morning or evening (avoid afternoon heat)
-- Maintain 10–14 day intervals
-- Follow Pre-Harvest Interval (PHI) strictly for export grapes
-
-*Source: NRC for Grapes, Pune / Mahagrapes cooperative*""",
-
-    "Iron & zinc deficiency symptoms & treatment?": """**Iron & Zinc Deficiency in Maharashtra Crops**
-
-**Iron (Fe) Deficiency:**
-- *Symptoms:* Young leaves (growing tips) turn yellow while leaf veins remain green — called interveinal chlorosis. Common in alkaline/calcareous soils (pH > 7.5), Marathwada, Vidarbha.
-- *Crops affected:* Soybean, chickpea, groundnut, sorghum, maize
-- *Treatment:*
-  - Soil: FeSO₄ @ 25–50 kg/ha mixed with FYM before sowing
-  - Foliar: FeSO₄ 0.5% + Citric acid 0.1% spray; 2–3 sprays at 7-day intervals
-  - Chelated Fe (Fe-EDTA) 0.2% spray — more effective in alkaline soils
-
-**Zinc (Zn) Deficiency:**
-- *Symptoms:* Brown/rust spots on older leaves, shortened internodes, "khaira" disease in paddy, small leaves, delayed maturity
-- *Crops affected:* Paddy, wheat, maize, sugarcane, cotton
-- *Treatment:*
-  - Soil: ZnSO₄·7H₂O @ 25 kg/ha basal; repeat every 2–3 years
-  - Foliar: ZnSO₄ 0.5% spray (+ lime 0.25% to avoid leaf burn) — 2 sprays
-  - Seed treatment: ZnSO₄ solution soaking for 12 hours before sowing
-
-**Prevention:** Soil Health Card testing every 3 years — apply nutrients based on report. Both Fe and Zn deficiencies are very common in black and alkaline soils of Maharashtra.
-
-*Apply during cool hours to avoid leaf scorch.*""",
-
-    "Drip irrigation schedule for onion per stage?": """**Drip Irrigation Schedule for Onion — Maharashtra**
-
-**Variety:** Bhima Kiran / Bhima Shakti (Rabi onion, Oct–Mar)
-**System:** Drip with inline drip laterals, 1.5 LPH emitters
-
-| Growth Stage | Duration | Water Requirement | Drip Hours/Day | Interval |
-|-------------|----------|-----------------|---------------|----------|
-| Transplanting | Days 1–10 | 6–8 mm/day | 3–4 hours | Daily |
-| Early vegetative | Days 11–30 | 5–6 mm/day | 2–3 hours | Daily |
-| Bulb initiation | Days 31–60 | 6–8 mm/day | 3–4 hours | Daily |
-| Bulb development | Days 61–90 | 8–10 mm/day | 4–5 hours | Daily |
-| Maturity | Days 91–100 | 3–4 mm/day | 1–2 hours | Every 2 days |
-| Pre-harvest | Days 101–110 | Stop irrigation | — | Stop 10 days before harvest |
-
-**Fertigation through drip:**
-- Days 1–30: 19:19:19 (NPK) @ 3 kg/day/ha
-- Days 31–60: 12:61:0 (MAP) @ 2 kg + KNO₃ 2 kg/day/ha
-- Days 61–90: 0:0:50 (SOP) @ 3 kg/day/ha for bulb size
-- Calcium nitrate 2 kg/ha weekly to prevent tip burn
-
-**Water saving:** Drip saves 40–50% water vs flood irrigation and increases yield by 20–30%.
-
-*Source: NIPHM / Maharashtra Agriculture Dept drip guidelines*""",
-
-    "How to manage powdery mildew on grapes?": """**Powdery Mildew Management on Grapes — Maharashtra**
-
-**Cause:** Uncinula necator (fungus). Favoured by warm days (25–30°C) + cool nights + dry weather — common in Nashik, Sangli, Solapur regions.
-
-**Symptoms:** White powdery coating on young leaves, shoots, and berries. Berries crack and dry if severe.
-
-**Management strategy:**
-
-🌿 **Cultural control:**
-- Prune to ensure good air circulation inside canopy
-- Remove and destroy infected shoots immediately
-- Avoid excess nitrogen (promotes soft, susceptible growth)
-
-🧴 **Spray schedule:**
-| Timing | Fungicide | Dose/100L |
-|--------|-----------|-----------|
-| First sign / preventive | Wettable Sulphur 80% | 250–300 g |
-| 7 days after | Dinocap 48% EC | 30 ml |
-| Berry set | Hexaconazole 5% SC | 20 ml |
-| Berry development | Myclobutanil 10% WP | 100 g |
-| Repeat if needed | Tebuconazole 25% WG | 50 g |
-
-**Key rules:**
-- Do NOT spray sulphur when temperature > 35°C (causes phytotoxicity)
-- Alternate chemical groups — avoid hexaconazole more than twice per season
-- Spray undersides of leaves as well
-- Maintain 10-day spray intervals during high-risk period
-
-**Organic option:** Spray potassium bicarbonate (1%) or neem oil 2% as preventive.
-
-*Source: NRC for Grapes Pune / MPKV Rahuri recommendations*""",
-
-    # SELL chips
-    "Best time to sell onion in Nashik 2025?": """**Best Time to Sell Onion in Nashik — 2025 Guide**
-
-**Nashik onion market pattern (Lasalgaon APMC — Asia's largest onion market):**
-
-**Rabi onion (main crop — harvest March–May):**
-- **Peak arrivals:** March–May → prices typically lowest (₹800–1,200/qtl)
-- **Best selling window:** **June–September** when arrivals drop and domestic + export demand rises
-- If you can store: **October–December** often sees prices of ₹2,000–3,500/qtl
-
-**Kharif onion (harvest Oct–Nov):**
-- Low volume crop; prices usually ₹1,500–2,500/qtl
-- Sell immediately after harvest as shelf life is shorter
-
-**2025 outlook factors:**
-- Export demand from Sri Lanka, Malaysia, Bangladesh pushes prices up May–September
-- Government export ban risk: monitor DGFT notifications (ban imposed when domestic prices spike > ₹40/kg retail)
-- Cold storage capacity in Nashik: ~15 lakh MT — store only if prices below ₹1,200/qtl
-
-**Practical tips:**
-- Check Lasalgaon APMC daily price on agmarknet.gov.in
-- Register for e-NAM (enam.gov.in) — access 1,000+ buyers
-- Sort/grade before selling: A-grade (55mm+) fetches 30–40% premium
-
-*Price data: Agmarknet / Lasalgaon APMC records*""",
-
-    "Cotton MSP 2024-25 vs current mandi rate?": """**Cotton MSP 2024-25 vs Mandi Rates — Maharashtra**
-
-**MSP (Minimum Support Price) 2024-25 — CACP declared:**
-| Cotton Type | MSP 2024-25 | MSP 2023-24 | Increase |
-|------------|------------|------------|---------|
-| Medium Staple | ₹7,121/qtl | ₹6,620/qtl | ₹501 (+7.6%) |
-| Long Staple | ₹7,521/qtl | ₹7,020/qtl | ₹501 (+7.1%) |
-
-**Typical mandi rates (Vidarbha APMCs — 2024-25 season):**
-| APMC | Modal Price (₹/qtl) | vs MSP |
-|------|--------------------|----|
-| Nagpur | ₹6,400 | Below MSP |
-| Amravati | ₹6,200 | Below MSP |
-| Yavatmal | ₹6,300 | Below MSP |
-| Wardha | ₹6,500 | Below MSP |
-
-**MSP procurement:**
-- CCI (Cotton Corporation of India) procures at MSP when mandi prices fall below
-- Contact nearest CCI office or District Agriculture Office to register for MSP sale
-- Documents: 7/12 extract, Aadhaar, bank passbook, sowing certificate
-
-**Advice:** If mandi price is below MSP, approach CCI directly. Do NOT sell below MSP without first checking if CCI procurement is active in your district.
-
-*Source: CACP / CCI India / Agmarknet 2024-25 data*""",
-
-    "Which APMC gives best price for soybean?": """**Best APMC for Soybean Prices — Maharashtra**
-
-**Top soybean APMCs (based on Agmarknet 2024-25 data):**
-
-| APMC | District | Modal Price (₹/qtl) | Daily Arrival |
-|------|---------|--------------------|----|
-| Latur | Latur | ₹4,200 | ~5,000 MT |
-| Jalna | Jalna | ₹4,300 | ~3,500 MT |
-| Aurangabad | Aurangabad | ₹4,400 | ~3,000 MT |
-| Osmanabad | Osmanabad | ₹4,100 | ~4,000 MT |
-| Nanded | Nanded | ₹4,150 | ~3,500 MT |
-
-**MSP 2024-25:** ₹4,892/qtl (CACP). If mandi prices are below this, sell through NAFED/state procurement or wait.
-
-**Tips to get better price:**
-1. **Grade your produce:** Clean, dry soybean (moisture < 12%) fetches 5–8% premium
-2. **Sell in peak demand:** November–January (crushing season) sees better prices
-3. **Use e-NAM:** Register on enam.gov.in — bid from buyers across India, not just local traders
-4. **Check multiple APMCs:** Jalna and Aurangabad consistently 5–8% higher than Latur
-
-**Best strategy:** Check prices on agmarknet.gov.in the night before and choose the highest-priced APMC within transport distance.
-
-*Source: Agmarknet / NHB data*""",
-
-    "Grapes export procedure from Nashik?": """**Grapes Export Procedure from Nashik — Step-by-Step**
-
-**Nashik exports Thompson Seedless, Sharad, Manik Chaman to Europe, UAE, UK, SE Asia.**
-
-**Step 1 — Registration:**
-- Register as exporter with APEDA (apeda.gov.in) — mandatory
-- Get IEC (Import Export Code) from DGFT — apply online at dgft.gov.in
-- Register farm on APEDA's GrapeNet portal (tracenet.gov.in/grapenet)
-
-**Step 2 — Pre-harvest (October–January):**
-- Follow APEDA's Grape Export Residue Management Schedule (no banned pesticides)
-- Conduct soil and leaf tissue testing
-- Maintain spray diary (mandatory for EU export)
-- Apply for "registered grower" status with APEDA
-
-**Step 3 — Harvest & packing:**
-- Harvest at 16–18° Brix, firmness 250–300 g/cm²
-- Pack in 4.5 kg or 8 kg cartons with proper APEDA label
-- Pre-cooling to 0–2°C within 4 hours of harvest
-
-**Step 4 — Phytosanitary certificate:**
-- Apply to Plant Protection Quarantine & Storage, Nashik
-- MRL (Maximum Residue Limit) testing mandatory for EU/UK
-
-**Key contacts:**
-- APEDA Nashik: 0253-2507511
-- Mahagrapes (FPO): 020-25533117
-- NHB Nashik: 0253-2312550
-
-*Export season: January–March. Start registration by October.*""",
-
-    "How to get better price than mandi rate?": """**How to Get Better Price Than Mandi Rate — Maharashtra**
-
-**Strategies to beat the mandi (APMC) price:**
-
-💻 **1. e-NAM (National Agriculture Market)**
-- Register free at enam.gov.in — sell to buyers across India via online bidding
-- Often 5–15% higher than local APMC mandi rate
-- Available at 50+ APMCs in Maharashtra
-
-🏆 **2. Direct marketing / farmer's markets**
-- Shetkari Bazaar (Pune, Mumbai, Nashik) — sell directly to consumers
-- Farmers' Market at Pune, Aurangabad — vegetable/fruit growers get 2–3x retail price
-- SAFAL (Mother Dairy) collection centres for vegetables
-
-📦 **3. Grading and value addition**
-- Sorted/graded produce gets 20–40% premium
-- Simple cleaning, sizing, packaging raises perceived value
-- For onion: export-grade (55mm+) vs domestic grade
-
-🤝 **4. FPO / Cooperative selling**
-- Join Farmer Producer Organisation — collective bargaining power
-- Contact NABARD/NHB for FPO formation support
-- Maharashtra has 2,000+ FPOs; join nearest one
-
-🏪 **5. Direct contracts with retailers/processors**
-- Approach Big Bazaar, Reliance Fresh, D-Mart procurement teams
-- For cotton: direct tie-up with ginning mills
-- For soybean: contact crushing mills directly (Solvent Extractors Assn)
-
-**6. MSP route:** For notified crops, sell at MSP through NAFED/CCI/FCI when mandi price < MSP.
-
-*Always compare at least 3 options before selling.*""",
-
-    "Warehouse receipt loan for cotton farmers?": """**Warehouse Receipt Loan for Cotton Farmers — Maharashtra**
-
-**What is it?** Store your cotton in a WDRA-registered warehouse → get a receipt → pledge the receipt at any bank → get 70–80% of crop value as loan at 7–9% interest. Sell cotton later when prices rise.
-
-**How it works:**
-1. **Harvest cotton** and bring it to nearest accredited warehouse (CWC, SWC, or private)
-2. **Deposit:** Warehouse issues electronic Negotiable Warehouse Receipt (e-NWR)
-3. **Pledge at bank:** Take e-NWR to SBI, Bank of Maharashtra, or any commercial bank
-4. **Get loan:** 70–80% of market value; interest rate 7–9% p.a. (Kisan Credit Card eligible)
-5. **Sell when prices are good** → repay loan → collect balance
-
-**Registered warehouses in Maharashtra:**
-- CWC (Central Warehousing Corp) — Nagpur, Amravati, Aurangabad
-- MSSWC (Maharashtra State Warehousing Corp) — 200+ godowns statewide
-- Private WDRA-accredited warehouses in Vidarbha cotton belt
-
-**Benefits:**
-- Avoid distress sale at harvest-time low prices
-- Cotton safely stored; interest cost usually less than price gain
-- No middleman
-
-**Registration:** Visit wdra.nic.in or contact nearest bank branch with 7/12 extract + Aadhaar.
-
-**Interest subvention:** GoI provides 2% interest subvention on warehouse receipt loans up to ₹3 lakh.
-
-*Contact: Maharashtra State Warehousing Corp — 020-26058161*""",
-}
-
-# Marathi static answers for chips (mapped by English question)
-CHIP_STATIC_ANSWERS_MR = {
-    "काळ्या मातीत pH 7.8 साठी सर्वोत्तम पिक?": CHIP_STATIC_ANSWERS["Best crop for black cotton soil pH 7.8?"],
-    "विदर्भातील खरीप पेरणी दिनदर्शिका 2024?": CHIP_STATIC_ANSWERS["Kharif sowing calendar for Vidarbha 2024?"],
-    "सोयाबीनमधील नत्र कमतरता कशी दूर करावी?": CHIP_STATIC_ANSWERS["How to fix nitrogen deficiency in soybean?"],
-    "कापसाला प्रति हेक्टर खताचा डोस किती?": CHIP_STATIC_ANSWERS["Fertiliser dose for cotton per hectare?"],
-    "उसानंतर आंतरपीक पर्याय कोणते?": CHIP_STATIC_ANSWERS["Intercropping options after sugarcane?"],
-    "महाराष्ट्रात सेंद्रिय शेती प्रमाणपत्र कसे मिळवावे?": CHIP_STATIC_ANSWERS["Organic farming certification in Maharashtra?"],
-    "सोयाबीनची पाने पिवळी — काय चुकते आहे?": CHIP_STATIC_ANSWERS["Yellow leaves on soybean — what's wrong?"],
-    "कापसावर बोंड अळी — सेंद्रिय नियंत्रण?": CHIP_STATIC_ANSWERS["Bollworm attack on cotton — organic control?"],
-    "नाशिकमधील द्राक्षावर बुरशीनाशक वेळापत्रक?": CHIP_STATIC_ANSWERS["Fungicide spray schedule for grapes Nashik?"],
-    "लोह व जस्त कमतरतेची लक्षणे व उपाय?": CHIP_STATIC_ANSWERS["Iron & zinc deficiency symptoms & treatment?"],
-    "कांद्यासाठी टप्प्यानुसार ठिबक सिंचन वेळापत्रक?": CHIP_STATIC_ANSWERS["Drip irrigation schedule for onion per stage?"],
-    "द्राक्षावरील भुरी रोग कसा व्यवस्थापित करावा?": CHIP_STATIC_ANSWERS["How to manage powdery mildew on grapes?"],
-    "नाशिकमध्ये कांदा विकण्याची सर्वोत्तम वेळ 2025?": CHIP_STATIC_ANSWERS["Best time to sell onion in Nashik 2025?"],
-    "कापूस MSP 2024-25 विरुद्ध सध्याचा मंडी भाव?": CHIP_STATIC_ANSWERS["Cotton MSP 2024-25 vs current mandi rate?"],
-    "सोयाबीनला सर्वोत्तम भाव कोणत्या APMC मध्ये?": CHIP_STATIC_ANSWERS["Which APMC gives best price for soybean?"],
-    "नाशिकहून द्राक्ष निर्यात प्रक्रिया काय आहे?": CHIP_STATIC_ANSWERS["Grapes export procedure from Nashik?"],
-    "मंडी दरापेक्षा जास्त भाव कसा मिळवावा?": CHIP_STATIC_ANSWERS["How to get better price than mandi rate?"],
-    "कापूस शेतकऱ्यांसाठी गोदाम पावती कर्ज?": CHIP_STATIC_ANSWERS["Warehouse receipt loan for cotton farmers?"],
-}
-
-
 def finish_chip_qa(prefix, domain, context, data_context="", extra_knowledge=""):
-    """Show static built-in answer for the pending chip question (no AI call)."""
+    """After widgets define context: run Gemini on pending chip and persist answer until cleared."""
     pend = st.session_state.pop(f"{prefix}_pending", None)
     res_key = f"{prefix}_result"
     if pend:
-        # Look up static answer (try both English and Marathi maps)
-        ans = (
-            CHIP_STATIC_ANSWERS.get(pend)
-            or CHIP_STATIC_ANSWERS_MR.get(pend)
-            or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please use the AI chatbot tab for this question.'}"
-        )
+        expanded = expand_chip_question(pend, domain)
+        with st.spinner(t("chip_working")):
+            try:
+                ans = ask_gemini(
+                    expanded,
+                    context=context,
+                    data_context=data_context,
+                    extra_knowledge=extra_knowledge,
+                )
+            except Exception as ex:
+                ans = f"❌ {ex}"
         st.session_state[res_key] = {"q": pend, "a": ans}
     block = st.session_state.get(res_key)
     if block:
@@ -1618,7 +1403,7 @@ def _sell_chart_layout(fig):
 
 
 def render_weather_panel():
-    """Top bar: expand for Google Weather (current, 24h hourly, 10-day daily)."""
+    """Top bar: expand for AI-powered weather (Gemini RAG — uses GOOGLE_API_KEY only, no separate weather key)."""
     if "weather_bump" not in st.session_state:
         st.session_state.weather_bump = 0
 
@@ -1626,7 +1411,7 @@ def render_weather_panel():
         st.markdown(
             '<div class="weather-strip-collapsed">'
             f'<p class="weather-strip-title">{t("weather_head")}</p>'
-            f'<p class="weather-strip-hint">{t("weather_sub")}</p></div>',
+            f'<p class="weather-strip-hint">{"AI-powered · Google Gemini RAG · No extra API key needed" if not IS_MR else "AI-आधारित हवामान · Gemini RAG · वेगळी API की लागत नाही"}</p></div>',
             unsafe_allow_html=True,
         )
         if st.button(
@@ -1643,7 +1428,7 @@ def render_weather_panel():
     with h1:
         st.markdown(
             f'<p class="weather-strip-title" style="color:#0d2b1a!important;">{t("weather_head")}</p>'
-            f'<p class="weather-strip-hint" style="color:#3d5a45!important;">{t("weather_sub")}</p>',
+            f'<p class="weather-strip-hint" style="color:#3d5a45!important;">{"Powered by Google Gemini AI · Live search · No extra API key" if not IS_MR else "Google Gemini AI · थेट माहिती · वेगळी की नाही"}</p>',
             unsafe_allow_html=True,
         )
     with h2:
@@ -1651,7 +1436,7 @@ def render_weather_panel():
             st.session_state.weather_open = False
             st.rerun()
 
-    dist_list = sorted(price_df["District"].dropna().unique())
+    dist_list = sorted(price_df["District"].dropna().unique().tolist())
     if st.session_state.weather_district not in dist_list:
         st.session_state.weather_district = dist_list[0] if dist_list else "Pune"
 
@@ -1660,69 +1445,70 @@ def render_weather_panel():
         sel = st.selectbox(
             t("weather_district"),
             dist_list,
-            index=dist_list.index(st.session_state.weather_district),
+            index=dist_list.index(st.session_state.weather_district) if st.session_state.weather_district in dist_list else 0,
             key="wx_district_sel",
         )
         st.session_state.weather_district = sel
     with cwb:
-        st.caption(t("weather_src"))
+        st.caption("Source: Google Gemini AI (live RAG)" if not IS_MR else "स्रोत: Google Gemini AI (RAG)")
     with cwc:
         if st.button(t("weather_refresh"), key="wx_refresh"):
             st.session_state.weather_bump += 1
             st.rerun()
 
-    if not _ENV_WEATHER_KEY:
-        st.info(t("weather_no_key"))
+    if not _ENV_GOOGLE_KEY:
+        st.info(
+            "Set **GOOGLE_API_KEY** to enable AI-powered weather." if not IS_MR
+            else "AI हवामानासाठी **GOOGLE_API_KEY** सेट करा."
+        )
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    lat, lon = _latlon_for_district(st.session_state.weather_district)
-    spin_msg = "हवामान लोड होत आहे…" if IS_MR else "Loading weather…"
+    spin_msg = "AI हवामान माहिती मिळवत आहे…" if IS_MR else "Fetching AI weather data…"
     with st.spinner(spin_msg):
-        bundle = _google_weather_bundle(lat, lon, int(st.session_state.weather_bump))
+        result = _gemini_weather_rag(sel, int(st.session_state.weather_bump))
 
-    if bundle.get("error") == "no_key":
-        st.info(t("weather_no_key"))
-        st.markdown("</div>", unsafe_allow_html=True)
-        return
-    if bundle.get("error"):
-        st.warning(f'{t("weather_err")}: {bundle["error"]}')
+    if result.get("error"):
+        st.warning(
+            f'{"हवामान मिळाले नाही" if IS_MR else "Could not load weather"}: {result["error"]}'
+        )
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    cur = bundle.get("current") or {}
-    if not cur:
+    wx = result.get("data", {})
+    if not wx:
         st.warning(t("weather_err"))
         st.markdown("</div>", unsafe_allow_html=True)
         return
 
-    def _deg(obj):
-        if not obj or not isinstance(obj, dict):
-            return None
-        return obj.get("degrees")
-
-    temp = _deg(cur.get("temperature"))
-    feels = _deg(cur.get("feelsLikeTemperature"))
-    cond = (cur.get("weatherCondition") or {}).get("description") or {}
-    cond_txt = cond.get("text") or "—"
-    icon_uri = (cur.get("weatherCondition") or {}).get("iconBaseUri") or ""
-    hum = cur.get("relativeHumidity")
-    wind = (cur.get("wind") or {}).get("speed") or {}
-    wval = wind.get("value")
-    wunit = str(wind.get("unit") or "KILOMETERS_PER_HOUR").replace("_", " ").lower()
-    uv = cur.get("uvIndex")
-    precip = ((cur.get("precipitation") or {}).get("probability") or {}).get("percent")
+    # ── Current conditions ──
+    temp = wx.get("temperature_c")
+    feels = wx.get("feels_like_c")
+    cond_txt = wx.get("condition", "—")
+    hum = wx.get("humidity_pct")
+    wind = wx.get("wind_kmh")
+    uv = wx.get("uv_index")
+    precip = wx.get("rain_chance_pct")
+    advisory = wx.get("farming_advisory", "")
 
     st.markdown('<div class="weather-now-main">', unsafe_allow_html=True)
     col_ic, col_tx = st.columns([1, 5])
     with col_ic:
-        if icon_uri:
-            _iu = icon_uri if str(icon_uri).endswith((".svg", ".png")) else f"{icon_uri}.svg"
-            st.markdown(
-                f'<img src="{_iu}" width="72" height="72" alt="" '
-                'style="display:block;margin:0 auto;" onerror="this.style.display=\'none\'"/>',
-                unsafe_allow_html=True,
-            )
+        # Pick emoji icon based on condition text
+        cond_lower = cond_txt.lower()
+        if any(w in cond_lower for w in ["rain", "shower", "drizzle", "thunder", "storm"]):
+            wx_icon = "🌧️"
+        elif any(w in cond_lower for w in ["cloud", "overcast", "fog", "mist", "haze"]):
+            wx_icon = "⛅"
+        elif any(w in cond_lower for w in ["clear", "sunny", "fair"]):
+            wx_icon = "☀️"
+        elif any(w in cond_lower for w in ["snow", "sleet", "hail"]):
+            wx_icon = "🌨️"
+        elif any(w in cond_lower for w in ["wind", "breezy", "gust"]):
+            wx_icon = "💨"
+        else:
+            wx_icon = "🌤️"
+        st.markdown(f'<div style="font-size:3.5rem;text-align:center;">{wx_icon}</div>', unsafe_allow_html=True)
     with col_tx:
         unit = "°C"
         tline = f"{temp:.1f}{unit}" if temp is not None else "—"
@@ -1732,87 +1518,46 @@ def render_weather_panel():
         meta = f"**{cond_txt}**"
         if hum is not None:
             meta += f" · {'आर्द्रता' if IS_MR else 'Humidity'} {hum}%"
-        if wval is not None:
-            meta += f" · {'वारा' if IS_MR else 'Wind'} {wval} {wunit}"
+        if wind is not None:
+            meta += f" · {'वारा' if IS_MR else 'Wind'} {wind} km/h"
         if uv is not None:
             meta += f" · UV {uv}"
         if precip is not None:
             meta += f" · {'पावसाची शक्यता' if IS_MR else 'Rain chance'} {precip}%"
         st.markdown(f'<div class="weather-now-meta">{meta}</div>', unsafe_allow_html=True)
+        if advisory:
+            st.markdown(
+                f'<div style="margin-top:.5rem;padding:.45rem .7rem;background:#f0faf3;border-left:3px solid #52b788;'
+                f'border-radius:8px;font-size:.82rem;color:#1a4731;">🌾 {advisory}</div>',
+                unsafe_allow_html=True,
+            )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    hrs = bundle.get("hours") or {}
-    fh = hrs.get("forecastHours") or []
-    if fh:
-        st.markdown(f"**{t('weather_hourly')}**")
-        rows = []
-        for h in fh:
-            iv = h.get("interval") or {}
-            st_t = iv.get("startTime", "")[:16].replace("T", " ")
-            ddt = h.get("displayDateTime") or {}
-            lbl = f"{ddt.get('hours', 0):02d}:00" if ddt else st_t
-            td = _deg(h.get("temperature"))
-            ct = ((h.get("weatherCondition") or {}).get("description") or {}).get("text") or ""
-            pr = ((h.get("precipitation") or {}).get("probability") or {}).get("percent")
-            rows.append({"Time": lbl, "°C": td, "Condition": ct, "Rain %": pr})
-        hdf = pd.DataFrame(rows)
-        hdf = hdf[hdf["°C"].notna()] if "°C" in hdf.columns else hdf
-        if not hdf.empty:
-            fig_h = go.Figure()
-            fig_h.add_trace(
-                go.Scatter(
-                    x=hdf["Time"],
-                    y=hdf["°C"],
-                    mode="lines+markers",
-                    name="°C",
-                    line=dict(color="#1a4731", width=2.5),
-                    marker=dict(size=7, color="#40916c"),
-                    hovertemplate="%{x}<br>%{y:.1f} °C<extra></extra>",
-                )
-            )
-            fig_h.update_layout(
-                title=None,
-                margin=dict(l=10, r=10, t=10, b=10),
-                height=280,
-                xaxis=dict(showgrid=False, title=""),
-                yaxis=dict(gridcolor="rgba(45,106,79,.2)", title="°C"),
-                paper_bgcolor="#f4faf7",
-                plot_bgcolor="#e8f2ec",
-                font=dict(family="Sora, sans-serif", size=11, color="#0d2b1a"),
-                hovermode="x unified",
-            )
-            st.plotly_chart(fig_h, use_container_width=True, config=PLOTLY_INTERACTIVE)
-
-    days = bundle.get("days") or {}
-    fdays = days.get("forecastDays") or []
-    if fdays:
-        st.markdown(f"**{t('weather_daily')}**")
+    # ── 5-day forecast cards ──
+    forecast = wx.get("forecast", [])
+    if forecast:
+        st.markdown(f"**{'५ दिवसांचा अंदाज' if IS_MR else '5-Day Outlook'}**")
         cards_html = ['<div class="weather-daily-row">']
-        for d in fdays:
-            dd = d.get("displayDate") or {}
-            date_lbl = f"{dd.get('day', '?')}/{dd.get('month', '?')}"
-            day_f = d.get("daytimeForecast") or {}
-            night_f = d.get("nighttimeForecast") or {}
-            max_t = _deg(d.get("maxTemperature")) or _deg(day_f.get("maxTemperature"))
-            min_t = _deg(d.get("minTemperature")) or _deg(night_f.get("minTemperature"))
-            wc = (
-                day_f.get("weatherCondition")
-                or night_f.get("weatherCondition")
-                or d.get("weatherCondition")
-                or {}
-            )
-            dtxt = (wc.get("description") or {}).get("text") or "—"
+        for d in forecast[:5]:
+            day_lbl = d.get("day", "")
+            date_lbl = d.get("date", "")
+            max_t = d.get("max_c")
+            min_t = d.get("min_c")
+            dtxt = d.get("condition", "—")[:28]
+            rain_pct = d.get("rain_chance_pct")
             rng = ""
             if max_t is not None and min_t is not None:
                 rng = f"{max_t:.0f}° / {min_t:.0f}°"
             elif max_t is not None:
                 rng = f"↑{max_t:.0f}°"
-            elif min_t is not None:
-                rng = f"↓{min_t:.0f}°"
-            safe_txt = str(dtxt)[:32].replace("<", "")
+            rain_info = f"🌧 {rain_pct}%" if rain_pct is not None else ""
             cards_html.append(
-                f'<div class="weather-day-card"><div class="d1">{date_lbl}</div>'
-                f'<div class="d2">{safe_txt}</div><div class="d3">{rng}</div></div>'
+                f'<div class="weather-day-card">'
+                f'<div class="d1">{day_lbl} {date_lbl}</div>'
+                f'<div class="d2">{dtxt}</div>'
+                f'<div class="d3">{rng}</div>'
+                f'<div class="d2" style="margin-top:.2rem;color:#0077b6;">{rain_info}</div>'
+                f'</div>'
             )
         cards_html.append("</div>")
         st.markdown("".join(cards_html), unsafe_allow_html=True)
@@ -1900,7 +1645,7 @@ elif st.session_state.page == "growing":
     soil_display  = soil_names_mr if IS_MR else soil_names_en
 
     with tab1:
-        chip_row(get_chips("grow")[:5], "g_soil_chip")
+        chip_row(get_chips("grow")[:5], "g_soil")
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -1990,7 +1735,7 @@ elif st.session_state.page == "growing":
 
         _grow_ctx = f"Soil type: {soil_en}. pH: {ph}. District: {district}. Season: {season}. Water: {water}."
         finish_chip_qa(
-            "g_soil_chip",
+            "g_soil",
             "grow",
             "You specialise in crop planning and soil science for Maharashtra.",
             data_context=_grow_ctx,
@@ -2046,11 +1791,15 @@ elif st.session_state.page == "growing":
         chip_row(get_chips("grow")[3:], "g2_chip")
         _g2_pending = st.session_state.pop("g2_chip_pending", None)
         if _g2_pending:
-            _r = (
-                CHIP_STATIC_ANSWERS.get(_g2_pending)
-                or CHIP_STATIC_ANSWERS_MR.get(_g2_pending)
-                or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please type your question below for AI response.'}"
-            )
+            with st.spinner(t("chip_working")):
+                try:
+                    _r = ask_gemini(
+                        expand_chip_question(_g2_pending, "grow"),
+                        context="You specialise in crop science and soil chemistry for Maharashtra.",
+                        extra_knowledge=CROP_VARIETY_REFERENCE,
+                    )
+                except Exception as _ex:
+                    _r = f"❌ {_ex}"
             st.session_state.grow_msgs.append({"role": "user", "content": _g2_pending})
             st.session_state.grow_msgs.append({"role": "assistant", "content": _r})
         for msg in st.session_state.grow_msgs:
@@ -2193,11 +1942,14 @@ elif st.session_state.page == "maintaining":
         chip_row(get_chips("maintain")[4:], "m3_chip")
         _m3 = st.session_state.pop("m3_chip_pending", None)
         if _m3:
-            _rm = (
-                CHIP_STATIC_ANSWERS.get(_m3)
-                or CHIP_STATIC_ANSWERS_MR.get(_m3)
-                or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please type your question below for AI response.'}"
-            )
+            with st.spinner(t("chip_working")):
+                try:
+                    _rm = ask_gemini(
+                        expand_chip_question(_m3, "maintain"),
+                        context="You are a crop health expert for Maharashtra.",
+                    )
+                except Exception as _ex:
+                    _rm = f"❌ {_ex}"
             st.session_state.maintain_msgs.append({"role": "user", "content": _m3})
             st.session_state.maintain_msgs.append({"role": "assistant", "content": _rm})
         for msg in st.session_state.maintain_msgs:
@@ -2535,11 +2287,14 @@ elif st.session_state.page == "selling":
         chip_row(get_chips("sell")[4:], "s3_chip")
         _s4 = st.session_state.pop("s3_chip_pending", None)
         if _s4:
-            _rs = (
-                CHIP_STATIC_ANSWERS.get(_s4)
-                or CHIP_STATIC_ANSWERS_MR.get(_s4)
-                or f"ℹ️ {'माहिती लवकरच उपलब्ध होईल.' if IS_MR else 'Detailed answer coming soon. Please type your question below for AI response.'}"
-            )
+            with st.spinner(t("chip_working")):
+                try:
+                    _rs = ask_gemini(
+                        expand_chip_question(_s4, "sell"),
+                        context="You are a commodity market expert for Maharashtra farmers.",
+                    )
+                except Exception as _ex:
+                    _rs = f"❌ {_ex}"
             st.session_state.sell_msgs.append({"role": "user", "content": _s4})
             st.session_state.sell_msgs.append({"role": "assistant", "content": _rs})
         for msg in st.session_state.sell_msgs:
