@@ -1,10 +1,3 @@
-"""
-MMCOE Kisan Sakha — deployment-ready Streamlit app.
-Set GOOGLE_API_KEY in the environment (from Google AI Studio). Optional: DATA_GOV_IN_API_KEY for live mandi merge.
-Optional: GOOGLE_WEATHER_API_KEY or GOOGLE_MAPS_API_KEY with Google Maps Platform Weather API enabled (live panel).
-Uses Gemini models via google-generativeai; RAG cache (24h); embedded baselines as fallback.
-"""
-
 import os
 import re
 import io
@@ -15,15 +8,12 @@ import plotly.graph_objects as go
 import google.generativeai as genai
 import requests
 
-# Backend: GOOGLE_API_KEY only (create at https://aistudio.google.com/apikey).
 _ENV_GOOGLE_KEY = (os.environ.get("AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA") or "").strip()
-_GEMINI_MODEL = "gemini-2.5-flash"  # model id for the Generative AI API (not a second API key)
+_GEMINI_MODEL = "gemini-2.5-flash"  
 
-# data.gov.in API key (optional) for daily Agmarknet-style mandi rows for Maharashtra.
 _ENV_DATA_GOV_KEY = (os.environ.get("DATA_GOV_IN_API_KEY") or "").strip()
 
-# Google Maps Platform — Weather API (optional). Enable "Weather API" on your GCP project and billing.
-# Docs: https://developers.google.com/maps/documentation/weather/overview
+
 _ENV_WEATHER_KEY = (
     os.environ.get("GOOGLE_WEATHER_API_KEY")
     or os.environ.get("GOOGLE_MAPS_API_KEY")
@@ -36,9 +26,9 @@ _RAG_URLS = (
     "https://www.maharashtra.gov.in/",
 )
 
-# ══════════════════════════════════════════════════
+
 # PAGE CONFIG
-# ══════════════════════════════════════════════════
+
 st.set_page_config(
     page_title="Kisan Sakha · MMCOE",
     page_icon="🌾",
@@ -46,9 +36,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ══════════════════════════════════════════════════
+
 # SESSION STATE
-# ══════════════════════════════════════════════════
+
 DEFAULTS = {
     "page": "home",
     "lang": "English",
@@ -65,9 +55,9 @@ for k, v in DEFAULTS.items():
 
 IS_MR = st.session_state.lang == "मराठी"
 
-# ══════════════════════════════════════════════════
+
 # TRANSLATION DICTIONARY
-# ══════════════════════════════════════════════════
+
 T = {
     "app_title":        {"English": "🚜 MMCOE Kisan Sakha", "मराठी": "🚜 एमएमसीओई किसान सखा"},
     "app_subtitle":     {"English": "AI-powered farming intelligence for Maharashtra's farmers", "मराठी": "महाराष्ट्रातील शेतकऱ्यांसाठी AI-आधारित कृषी माहिती"},
@@ -81,7 +71,7 @@ T = {
     "districts":        {"English": "Districts", "मराठी": "जिल्हे"},
     "markets":          {"English": "APMC Markets", "मराठी": "APMC बाजार"},
     "data_src_lbl":     {"English": "Data Source", "मराठी": "माहिती स्रोत"},
-    # Nav cards
+   
     "grow_title":       {"English": "Grow Smarter", "मराठी": "हुशारीने पिकवा"},
     "grow_sub":         {"English": "पिक निवड व माती विश्लेषण", "मराठी": "पिक निवड व माती विश्लेषण"},
     "grow_desc":        {"English": "Soil chemistry · pH maps · Crop-soil matching · Sowing calendar · Fertiliser plans", "मराठी": "माती रसायनशास्त्र · pH नकाशे · पिक-माती जुळणी · पेरणी दिनदर्शिका · खत योजना"},
@@ -91,7 +81,7 @@ T = {
     "sell_title":       {"English": "Market Intelligence", "मराठी": "बाजार माहिती"},
     "sell_sub":         {"English": "भाव व विक्री धोरण", "मराठी": "भाव व विक्री धोरण"},
     "sell_desc":        {"English": "Live Agmarknet prices · MSP alerts · APMC comparison · Price forecasts · Cold storage", "मराठी": "Agmarknet भाव · MSP सूचना · APMC तुलना · भाव अंदाज · शीतगृह"},
-    # Growing page
+
     "grow_header":      {"English": "🌱 Smart Crop Advisor", "मराठी": "🌱 हुशार पिक सल्लागार"},
     "grow_subhd":       {"English": "Soil chemistry, pH analysis & crop-matching powered by ICAR data", "मराठी": "ICAR डेटावर आधारित माती रसायनशास्त्र, pH विश्लेषण व पिक जुळणी"},
     "tab_soil":         {"English": "🔬 Soil Analysis & Crop Match", "मराठी": "🔬 माती विश्लेषण व पिक जुळणी"},
@@ -103,7 +93,7 @@ T = {
     "water_src":        {"English": "Water Source", "मराठी": "पाण्याचा स्रोत"},
     "district":         {"English": "District", "मराठी": "जिल्हा"},
     "get_rec":          {"English": "🔍 Get Full Crop Recommendation", "मराठी": "🔍 संपूर्ण पिक शिफारस मिळवा"},
-    # Maintaining page
+   
     "maint_header":     {"English": "🩺 Crop Health Centre", "मराठी": "🩺 पिक आरोग्य केंद्र"},
     "maint_subhd":      {"English": "AI diagnosis for pests, diseases, irrigation & nutrition — tailored to Maharashtra", "मराठी": "महाराष्ट्रासाठी कीड, रोग, सिंचन व पोषण यांचे AI निदान"},
     "tab_pest":         {"English": "🐛 Pest & Disease Diagnosis", "मराठी": "🐛 कीड व रोग निदान"},
@@ -114,7 +104,7 @@ T = {
     "symptom":          {"English": "Describe the problem", "मराठी": "समस्या सांगा"},
     "symptom_ph":       {"English": "E.g. leaves curling yellow, white powder on stem…", "मराठी": "उदा. पाने पिवळी होणे, खोडावर पांढरी पावडर…"},
     "diagnose_btn":     {"English": "🔬 Diagnose & Suggest Treatment", "मराठी": "🔬 निदान करा व उपचार सुचवा"},
-    # Selling page
+ 
     "sell_header":      {"English": "💰 Market Intelligence Centre", "मराठी": "💰 बाजार माहिती केंद्र"},
     "sell_subhd":       {"English": "Live Agmarknet APMC prices · MSP 2024-25 · AI market forecasts", "मराठी": "Agmarknet APMC भाव · MSP 2024-25 · AI बाजार अंदाज"},
     "tab_price":        {"English": "📊 APMC Price Explorer", "मराठी": "📊 APMC भाव एक्सप्लोरर"},
@@ -165,7 +155,7 @@ T = {
     "weather_daily":    {"English": "Daily outlook (up to 10 days)", "मराठी": "दैनिक अंदाज (१० दिवसांपर्यंत)"},
     "weather_src":      {"English": "Source: Google Weather API", "मराठी": "स्रोत: Google Weather API"},
     "sell_intro":       {"English": "Mandi prices, MSP charts, and AI advice below — use the chart toolbar to zoom and pan.", "मराठी": "खाली मंडी भाव, MSP आलेख व AI सल्ला — झूम व पॅनसाठी आलेखाची साधने वापरा."},
-    # Sidebar
+    
     "sidebar_title":    {"English": "## 🌿 Kisan Sakha · किसान सखा", "मराठी": "## 🌿 किसान सखा · Kisan Sakha"},
     "sidebar_sub":      {"English": "MMCOE · AI Farming Companion", "मराठी": "MMCOE · AI शेती सहाय्यक"},
     "src_agmarknet":    {"English": "📊 [Agmarknet / data.gov.in](https://www.data.gov.in/catalog/current-daily-price-various-commodities-various-markets-mandi)", "मराठी": "📊 [Agmarknet / data.gov.in](https://www.data.gov.in/catalog/current-daily-price-various-commodities-various-markets-mandi)"},
@@ -185,9 +175,8 @@ T = {
 def t(key):
     return T.get(key, {}).get(st.session_state.lang, T.get(key, {}).get("English", key))
 
-# ══════════════════════════════════════════════════
 # PROMPT CHIPS — bilingual
-# ══════════════════════════════════════════════════
+
 CHIPS = {
     "grow": {
         "English": [
@@ -245,7 +234,6 @@ CHIPS = {
     },
 }
 
-# Reference text for planting advice (RAG + prompts); supplement to ICAR/KVK — verify locally before sowing.
 CROP_VARIETY_REFERENCE = """
 Maharashtra crop & variety reference (indicative; confirm with KVK / SAU / seed dept):
 Cereals: Paddy — Jaya, Indrayani, Karjat-3, MTU-1010, HMT, Pusa Basmati; Wheat — Lok-1, GW-496, HD-2189, DDW-47; Jowar — CSH-16, CSV-17, Phule Chitra, Phule Yashoda; Bajra — ICTP-8203, GHB-558, ICMV-221; Maize — PMH-10, DHM-117, HM-4, African tall.
@@ -257,9 +245,9 @@ Spices & others: Chili — Tejaswini, Byadgi; Coriander — Local improved; Garl
 For each district agro-climatic zone (Vidarbha, Marathwada, Western MH, North MH, Konkan) match Kharif/Rabi/Zaid calendars; soil pH 5.5–8.5 typical management: lime for acidity, gypsum for sodic, organic matter for sandy.
 """
 
-# ══════════════════════════════════════════════════
+
 # EMBEDDED DATA (Agmarknet / ICAR / CACP)
-# ══════════════════════════════════════════════════
+
 PRICE_CSV = """Crop,Crop_MR,District,Market,Min_Price,Modal_Price,Max_Price,Season,Arrival_MT
 Onion,कांदा,Nashik,Lasalgaon,800,1100,1400,Kharif,12500
 Onion,कांदा,Nashik,Pimpalgaon,750,1050,1350,Kharif,9800
@@ -480,7 +468,7 @@ def _norm_price_row(rec: dict):
 def fetch_live_mandi_maharashtra() -> pd.DataFrame:
     if not _ENV_DATA_GOV_KEY:
         return pd.DataFrame()
-    # National Data Sharing Platform — Current Daily Prices (commodities / mandi); resource ID from data.gov.in catalog.
+   
     url = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
     rows = []
     try:
@@ -536,7 +524,7 @@ def load_data():
 
 price_df, soil_df, msp_df = load_data()
 
-# Approximate district centroids (Maharashtra) for Google Weather API lookups
+
 MH_DISTRICT_LATLON = {
     "Ahmednagar": (19.0948, 74.7480),
     "Akola": (20.7002, 77.0082),
@@ -637,9 +625,9 @@ def _google_weather_bundle(lat: float, lon: float, bump: int) -> dict:
     return out
 
 
-# ══════════════════════════════════════════════════
+
 # PLOTLY THEME
-# ══════════════════════════════════════════════════
+
 GREEN_PALETTE = ["#1a4731","#2d6a4f","#40916c","#52b788","#74c69d","#95d5b2","#b7e4c7","#d8f3dc"]
 AMBER_PALETTE = ["#7f3f00","#b5570a","#d4722a","#f4a261","#f7b97a","#fad09e","#fce8cc"]
 
@@ -696,9 +684,9 @@ def plotly_scatter(df, x, y, size, color, title=""):
     )
     return fig
 
-# ══════════════════════════════════════════════════
+
 # CSS
-# ══════════════════════════════════════════════════
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Tiro+Devanagari+Marathi:ital@0;1&display=swap');
@@ -908,9 +896,9 @@ hr{border-color:var(--g5)!important;}
 </style>
 """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════
+
 # SIDEBAR
-# ══════════════════════════════════════════════════
+
 with st.sidebar:
     st.markdown(t("sidebar_title"))
     st.caption(t("sidebar_sub"))
@@ -934,11 +922,12 @@ with st.sidebar:
 IS_MR = st.session_state.lang == "मराठी"
 
 # API key from environment only (deployment-ready)
+
 _effective_api_key = _ENV_GOOGLE_KEY
 if _effective_api_key:
     try:
-        genai.configure(api_key=_effective_api_key)
-        st.session_state.model = genai.GenerativeModel(_GEMINI_MODEL)
+        genai.configure(api_key="AIzaSyBOYvUD1IDosANVf1r6s0--_ym8UvwuwcA")
+        st.session_state.model = genai.GenerativeModel("gemini-2.5-flash")
     except Exception as e:
         st.session_state.model = None
         st.sidebar.error(str(e))
@@ -948,9 +937,9 @@ else:
 if not _effective_api_key:
     st.warning(t("no_api_key"))
 
-# ══════════════════════════════════════════════════
+
 # GOOGLE AI (Generative Language API)
-# ══════════════════════════════════════════════════
+
 def expand_chip_question(question: str, domain: str) -> str:
     """Turn a short chip label into an instruction for a long, structured answer."""
     guides = {
@@ -1053,9 +1042,9 @@ def ask_gemini(prompt, context="", data_context="", use_rag=True, extra_knowledg
                 return f"❌ Error: {e2}"
         return f"❌ Error: {err}"
 
-# ══════════════════════════════════════════════════
+
 # HELPERS
-# ══════════════════════════════════════════════════
+
 def go(page):
     st.session_state.page = page
     st.rerun()
@@ -2332,9 +2321,8 @@ if st.session_state.page == "home":
 
     st.caption(t("home_footer"))
 
-# ══════════════════════════════════════════════════
 # GROWING
-# ══════════════════════════════════════════════════
+
 elif st.session_state.page == "growing":
     back_btn()
     st.markdown(f'<p class="sec-hd fu">{t("grow_header")}</p>', unsafe_allow_html=True)
@@ -2522,9 +2510,9 @@ elif st.session_state.page == "growing":
                 st.session_state.grow_msgs = []
                 st.rerun()
 
-# ══════════════════════════════════════════════════
+
 # MAINTAINING
-# ══════════════════════════════════════════════════
+
 elif st.session_state.page == "maintaining":
     back_btn()
     st.markdown(f'<p class="sec-hd fu">{t("maint_header")}</p>', unsafe_allow_html=True)
